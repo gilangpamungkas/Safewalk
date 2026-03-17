@@ -14,13 +14,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3     # Checkout the Repository on the Virtual Machine
+        uses: actions/checkout@v4     # Checkout the Repository on the Virtual Machine
 
       - name: Set up JDK              # Setup JAVA to build the Android APK for us
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
-          java-version: '11'
+          java-version: '17'
           distribution: microsoft
+
+      # Create the .env file (Crucial so 'flutter build' doesn't crash)
+      - name: Create .env file
+        run: |
+          echo "MAPS_API_KEY=${{ secrets.MAPS_API_KEY }}" > .env
 
       #  Decode keystore File from repository secrets
       #  Keep the keystore file private; don’t check it into public source control!
