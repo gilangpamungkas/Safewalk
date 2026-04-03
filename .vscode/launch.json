@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "safewalk_app",
+            "request": "launch",
+            "type": "dart",
+            "deviceId": "RRCY803Q0LT",
+            "args": ["--device-timeout", "60"]
+        },
+        {
+            "name": "safewalk_app (profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile",
+            "deviceId": "RRCY803Q0LT",
+            "args": ["--device-timeout", "60"]
+        },
+        {
+            "name": "safewalk_app (release mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release",
+            "deviceId": "RRCY803Q0LT",
+            "args": ["--device-timeout", "60"]
+        }
+    ]
+}

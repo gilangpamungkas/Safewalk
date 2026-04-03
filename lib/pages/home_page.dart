@@ -31,8 +31,8 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
   void _onPlaceSelected(Prediction prediction, PlaceDetailsModel? details) {
     if (!mounted) return;
 
-    final lat = details?.result?.geometry?.location?.lat;
-    final lng = details?.result?.geometry?.location?.lng;
+    final lat = details?.result.geometry?.location.lat;
+    final lng = details?.result.geometry?.location.lng;
 
     if (lat == null || lng == null) {
       debugPrint('Place selected but lat/lng missing: ${prediction.description}');

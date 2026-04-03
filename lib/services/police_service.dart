@@ -34,33 +34,43 @@ class CrimeResult {
 class PoliceService {
   static const _baseUrl = 'https://data.police.uk/api';
 
-  /// Queries the Police API for crimes at each of the [sampledPoints].
-  /// [sampledPoints] should already be pre-sampled (e.g. via RouteService.sampleRoutePoints).
+  /// Queries the Police API for crimes along [sampledPoints].
+  /// Uses street-level crimes endpoint for broader coverage.
   static Future<CrimeResult> getCrimesAlongRoute(
     List<LatLng> sampledPoints,
   ) async {
     int totalCrimes = 0;
     int violentCrimes = 0;
 
-    // Police API has ~2 month data lag
-    final now = DateTime.now();
-    final queryDate = DateTime(now.year, now.month - 2);
-    final dateStr =
-        '${queryDate.year}-${queryDate.month.toString().padLeft(2, '0')}';
+    // Use a known available date — API has 3-4 month lag
+    // TODO: replace with dynamic latest-available date once confirmed working
+    const dateStr = '2024-10';
 
     for (final point in sampledPoints) {
       try {
         final uri = Uri.parse(
-          '$_baseUrl/crimes-at-location'
+          '$_baseUrl/crimes-street/all-crime'
           '?date=$dateStr'
           '&lat=${point.latitude}'
           '&lng=${point.longitude}',
         );
 
         final response = await http.get(uri);
+
+        debugPrint(
+          'PoliceService: ${point.latitude},${point.longitude} '
+          '→ status ${response.statusCode}',
+        );
+
         if (response.statusCode != 200) continue;
 
         final List crimes = jsonDecode(response.body);
+
+        debugPrint(
+          'PoliceService: ${point.latitude},${point.longitude} '
+          '→ ${crimes.length} crimes',
+        );
+
         totalCrimes += crimes.length;
         violentCrimes += crimes
             .where((c) =>
