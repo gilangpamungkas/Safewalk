@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Environment files (do not commit)
+.env
+
+# Local properties containing API keys
+android/local.properties

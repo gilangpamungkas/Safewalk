@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.10.7
+  sdk: ^3.10.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -27,13 +27,40 @@ environment:
 # dependencies can be manually updated by changing the version numbers below to
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
+
 dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
+  # iOS style icons (optional)
   cupertino_icons: ^1.0.8
+
+  # Mapbox SDK for Flutter
+  mapbox_maps_flutter: ^2.18.0
+
+  # Google maps for flutter
+  google_maps_flutter: ^2.14.0
+
+  # Device GPS
+  geolocator: ^14.0.2
+
+  # State management
+  provider: ^6.0.5
+
+  # API calls
+  http: ^1.6.0
+
+# Permissions handler
+  permission_handler: ^11.2.0
+
+# Google Places Autocomplete
+  google_places_api_flutter: ^2.0.0 
+
+  flutter_polyline_points: ^3.1.0
+
+  flutter_dotenv: ^6.0.0
+
+
 
 dev_dependencies:
   flutter_test:
@@ -58,9 +85,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
