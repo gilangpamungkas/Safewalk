@@ -7,11 +7,15 @@ import '../services/police_service.dart';
 import '../widgets/safety_badge.dart';
 
 class RoutePage extends StatefulWidget {
+  final String origin;
+  final LatLng originLatLng;
   final String destination;
   final LatLng destinationLatLng;
 
   const RoutePage({
     super.key,
+    required this.origin,
+    required this.originLatLng,
     required this.destination,
     required this.destinationLatLng,
   });
@@ -24,6 +28,7 @@ class _RoutePageState extends State<RoutePage> {
   GoogleMapController? mapController;
   LatLng? currentPosition;
   Set<Polyline> polylines = {};
+  Set<Marker> markers = {};
   StreamSubscription<LatLng>? positionStream;
   Timer? timer;
   int seconds = 0;
@@ -31,7 +36,6 @@ class _RoutePageState extends State<RoutePage> {
   bool _mapReady = false;
   bool _locationReady = false;
 
-  // Safety score state
   bool _safetyLoading = false;
   CrimeResult? _crimeResult;
 
@@ -42,6 +46,76 @@ class _RoutePageState extends State<RoutePage> {
     super.initState();
     _startTimer();
     _initLocation();
+    _initMarkers();
+  }
+
+  void _initMarkers() {
+    setState(() {
+      markers = {
+        Marker(
+          markerId: const MarkerId('origin'),
+          position: widget.originLatLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueBlue,
+          ),
+          infoWindow: InfoWindow(title: widget.origin),
+          zIndex: 2,
+        ),
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: widget.destinationLatLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueRed,
+          ),
+          infoWindow: InfoWindow(title: widget.destination),
+          zIndex: 2,
+        ),
+      };
+    });
+  }
+
+  void _buildCrimeMarkers(List<CrimePoint> crimePoints) {
+    final crimeMarkers = crimePoints.map((crime) {
+      return Marker(
+        markerId: MarkerId('crime_${crime.id}'),
+        position: crime.location,
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          crime.isViolent
+              ? BitmapDescriptor.hueRed
+              : BitmapDescriptor.hueYellow,
+        ),
+        infoWindow: InfoWindow(
+          title: crime.category,
+          snippet: crime.street,
+        ),
+        alpha: 0.85,
+        zIndex: 1,
+      );
+    }).toSet();
+
+    setState(() {
+      markers = {
+        Marker(
+          markerId: const MarkerId('origin'),
+          position: widget.originLatLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueBlue,
+          ),
+          infoWindow: InfoWindow(title: widget.origin),
+          zIndex: 2,
+        ),
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: widget.destinationLatLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueRed,
+          ),
+          infoWindow: InfoWindow(title: widget.destination),
+          zIndex: 2,
+        ),
+        ...crimeMarkers,
+      };
+    });
   }
 
   void _startTimer() {
@@ -78,10 +152,8 @@ class _RoutePageState extends State<RoutePage> {
   }
 
   Future<void> _drawRoute() async {
-    if (currentPosition == null) return;
-
     final route = await RouteService.getWalkingRoute(
-      origin: currentPosition!,
+      origin: widget.originLatLng,
       destination: widget.destinationLatLng,
     );
 
@@ -98,20 +170,27 @@ class _RoutePageState extends State<RoutePage> {
       };
     });
 
-    // Fit map to show full route
     final bounds = RouteService.boundsFromPoints(route);
     mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
 
     // Fetch crime data along the route
     setState(() => _safetyLoading = true);
+
     final sampled = RouteService.sampleRoutePoints(route);
-    final crimeResult = await PoliceService.getCrimesAlongRoute(sampled);
+    final distanceKm = RouteService.calculateRouteDistanceKm(route);
+
+    final crimeResult = await PoliceService.getCrimesAlongRoute(
+      sampled,
+      fullRoute: route,
+      routeDistanceKm: distanceKm,
+    );
 
     if (mounted) {
       setState(() {
         _crimeResult = crimeResult;
         _safetyLoading = false;
       });
+      _buildCrimeMarkers(crimeResult.crimePoints);
     }
   }
 
@@ -145,19 +224,13 @@ class _RoutePageState extends State<RoutePage> {
                 Expanded(
                   child: GoogleMap(
                     initialCameraPosition: CameraPosition(
-                      target: currentPosition ?? defaultLocation,
+                      target: widget.originLatLng,
                       zoom: 15,
                     ),
                     myLocationEnabled: true,
                     myLocationButtonEnabled: true,
                     polylines: polylines,
-                    markers: {
-                      Marker(
-                        markerId: const MarkerId('destination'),
-                        position: widget.destinationLatLng,
-                        infoWindow: InfoWindow(title: widget.destination),
-                      ),
-                    },
+                    markers: markers,
                     onMapCreated: (controller) {
                       mapController = controller;
                       setState(() => _mapReady = true);
@@ -184,9 +257,36 @@ class _RoutePageState extends State<RoutePage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            'Destination: ${widget.destination}',
-                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          // Origin row
+                          Row(
+                            children: [
+                              const Icon(Icons.my_location,
+                                  size: 16, color: Colors.blue),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  widget.origin,
+                                  style: const TextStyle(fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          // Destination row
+                          Row(
+                            children: [
+                              const Icon(Icons.location_on,
+                                  size: 16, color: Colors.red),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  widget.destination,
+                                  style: const TextStyle(fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -204,6 +304,33 @@ class _RoutePageState extends State<RoutePage> {
                             isLoading: _safetyLoading,
                             result: _crimeResult,
                           ),
+
+                          const SizedBox(height: 8),
+
+                          // Map legend
+                          if (_crimeResult != null)
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.location_on,
+                                    size: 14, color: Colors.red),
+                                SizedBox(width: 4),
+                                Text('Violent',
+                                    style: TextStyle(fontSize: 11)),
+                                SizedBox(width: 12),
+                                Icon(Icons.location_on,
+                                    size: 14, color: Colors.amber),
+                                SizedBox(width: 4),
+                                Text('Other crime',
+                                    style: TextStyle(fontSize: 11)),
+                                SizedBox(width: 12),
+                                Icon(Icons.location_on,
+                                    size: 14, color: Colors.blue),
+                                SizedBox(width: 4),
+                                Text('Origin',
+                                    style: TextStyle(fontSize: 11)),
+                              ],
+                            ),
 
                           const SizedBox(height: 16),
                           SizedBox(

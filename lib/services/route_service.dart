@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
@@ -100,4 +101,28 @@ class RouteService {
       northeast: LatLng(maxLat, maxLng),
     );
   }
+
+  /// Calculates total route distance in km using the Haversine formula.
+  static double calculateRouteDistanceKm(List<LatLng> points) {
+    double totalKm = 0;
+    for (int i = 0; i < points.length - 1; i++) {
+      totalKm += _haversineKm(points[i], points[i + 1]);
+    }
+    return totalKm;
+  }
+
+  /// Haversine distance between two coordinates in km.
+  static double _haversineKm(LatLng a, LatLng b) {
+    const r = 6371.0; // Earth radius in km
+    final dLat = _toRad(b.latitude - a.latitude);
+    final dLng = _toRad(b.longitude - a.longitude);
+    final h = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRad(a.latitude)) *
+            cos(_toRad(b.latitude)) *
+            sin(dLng / 2) *
+            sin(dLng / 2);
+    return r * 2 * asin(sqrt(h));
+  }
+
+  static double _toRad(double deg) => deg * pi / 180;
 }
