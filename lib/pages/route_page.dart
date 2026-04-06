@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/location_service.dart';
 import '../services/route_service.dart';
 import '../services/police_service.dart';
+import '../services/road_safety_service.dart';
+import '../services/combined_safety_score.dart';
 import '../widgets/safety_badge.dart';
 
 class RoutePage extends StatefulWidget {
@@ -27,26 +31,49 @@ class RoutePage extends StatefulWidget {
 class _RoutePageState extends State<RoutePage> {
   GoogleMapController? mapController;
   LatLng? currentPosition;
+  double _currentHeading = 0.0;
   Set<Polyline> polylines = {};
   Set<Marker> markers = {};
   StreamSubscription<LatLng>? positionStream;
+  StreamSubscription<CompassEvent>? _compassStream;
   Timer? timer;
   int seconds = 0;
 
   bool _mapReady = false;
   bool _locationReady = false;
+  bool _headingUp = false;
+  bool _tripStarted = false;
+
+  // Route progress
+  List<LatLng> _fullRoute = [];
+  double _totalRouteKm = 0;
+  double _walkedKm = 0;
+  double _remainingKm = 0;
 
   bool _safetyLoading = false;
-  CrimeResult? _crimeResult;
+  CombinedSafetyScore? _safetyScore;
 
   static const LatLng defaultLocation = LatLng(51.5074, -0.1278);
+  static const double _walkingSpeedKmh = 5.0;
 
   @override
   void initState() {
     super.initState();
-    _startTimer();
     _initLocation();
     _initMarkers();
+    _listenToCompass();
+  }
+
+  void _listenToCompass() {
+    _compassStream = FlutterCompass.events?.listen((CompassEvent event) {
+      if (!mounted) return;
+      if (event.heading != null) {
+        setState(() => _currentHeading = event.heading!);
+        if (_tripStarted && _headingUp && currentPosition != null) {
+          _updateCamera(currentPosition!);
+        }
+      }
+    });
   }
 
   void _initMarkers() {
@@ -74,27 +101,77 @@ class _RoutePageState extends State<RoutePage> {
     });
   }
 
-  void _buildCrimeMarkers(List<CrimePoint> crimePoints) {
-    final crimeMarkers = crimePoints.map((crime) {
+  void _buildAllMarkers({
+    required List<CrimePoint> crimePoints,
+    required List<CollisionPoint> collisionPoints,
+  }) {
+    // ── Crime markers ──────────────────────────────────────────
+    final Map<String, List<CrimePoint>> grouped = {};
+    for (final crime in crimePoints) {
+      final key =
+          '${crime.location.latitude},${crime.location.longitude}';
+      grouped.putIfAbsent(key, () => []).add(crime);
+    }
+
+    final crimeMarkers = grouped.entries.map((entry) {
+      final crimes = entry.value;
+      final hasViolent = crimes.any((c) => c.isViolent);
+      final count = crimes.length;
+
+      final latestMonth = crimes
+          .map((c) => c.month)
+          .reduce((a, b) => a.compareTo(b) > 0 ? a : b);
+      final latestLabel =
+          crimes.firstWhere((c) => c.month == latestMonth).monthLabel;
+
+      final title = count > 1
+          ? '$count crimes at this location'
+          : crimes.first.category;
+      final snippet = '${crimes.first.street} · latest: $latestLabel';
+
       return Marker(
-        markerId: MarkerId('crime_${crime.id}'),
-        position: crime.location,
+        markerId: MarkerId('crime_${entry.key}'),
+        position: crimes.first.location,
         icon: BitmapDescriptor.defaultMarkerWithHue(
-          crime.isViolent
+          hasViolent
               ? BitmapDescriptor.hueRed
               : BitmapDescriptor.hueYellow,
         ),
-        infoWindow: InfoWindow(
-          title: crime.category,
-          snippet: crime.street,
-        ),
+        infoWindow: InfoWindow(title: title, snippet: snippet),
         alpha: 0.85,
         zIndex: 1,
       );
     }).toSet();
 
+    // ── Collision markers ──────────────────────────────────────
+    final collisionMarkers = collisionPoints.map((collision) {
+      return Marker(
+        markerId: MarkerId(
+          'collision_${collision.lat}_${collision.lng}_${collision.date}',
+        ),
+        position: collision.location,
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          collision.isFatal
+              ? BitmapDescriptor.hueViolet  // purple = fatal
+              : BitmapDescriptor.hueOrange, // orange = serious
+        ),
+        infoWindow: InfoWindow(
+          title: collision.label,
+          snippet: collision.snippet,
+        ),
+        alpha: 0.9,
+        zIndex: 1,
+      );
+    }).toSet();
+
+    debugPrint(
+      'Markers: ${crimeMarkers.length} crime locations, '
+      '${collisionMarkers.length} collision locations',
+    );
+
     setState(() {
       markers = {
+        // Origin and destination always on top
         Marker(
           markerId: const MarkerId('origin'),
           position: widget.originLatLng,
@@ -114,14 +191,22 @@ class _RoutePageState extends State<RoutePage> {
           zIndex: 2,
         ),
         ...crimeMarkers,
+        ...collisionMarkers,
       };
     });
   }
 
-  void _startTimer() {
+  void _startTrip() {
+    setState(() {
+      _tripStarted = true;
+      _headingUp = true;
+    });
+
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => seconds++);
     });
+
+    if (currentPosition != null) _updateCamera(currentPosition!);
   }
 
   Future<void> _initLocation() async {
@@ -140,8 +225,59 @@ class _RoutePageState extends State<RoutePage> {
   void _listenToLocation() {
     positionStream = LocationService.positionStream().listen((position) {
       if (!mounted) return;
-      setState(() => currentPosition = position);
-      mapController?.animateCamera(CameraUpdate.newLatLng(position));
+      setState(() {
+        currentPosition = position;
+        if (_tripStarted) _updateProgress(position);
+      });
+      if (_tripStarted) _updateCamera(position);
+    });
+  }
+
+  void _updateCamera(LatLng position) {
+    if (mapController == null) return;
+    mapController!.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: position,
+          zoom: _headingUp ? 17 : 15,
+          bearing: _headingUp ? _currentHeading : 0,
+          tilt: _headingUp ? 30 : 0,
+        ),
+      ),
+    );
+  }
+
+  void _toggleHeadingUp() {
+    setState(() => _headingUp = !_headingUp);
+    if (currentPosition != null) _updateCamera(currentPosition!);
+  }
+
+  void _updateProgress(LatLng current) {
+    if (_fullRoute.isEmpty || _totalRouteKm == 0) return;
+
+    int closestIndex = 0;
+    double minDist = double.infinity;
+    for (int i = 0; i < _fullRoute.length; i++) {
+      final d = _haversineKm(current, _fullRoute[i]);
+      if (d < minDist) {
+        minDist = d;
+        closestIndex = i;
+      }
+    }
+
+    double walked = 0;
+    for (int i = 0; i < closestIndex; i++) {
+      walked += _haversineKm(_fullRoute[i], _fullRoute[i + 1]);
+    }
+
+    double remaining = 0;
+    for (int i = closestIndex; i < _fullRoute.length - 1; i++) {
+      remaining += _haversineKm(_fullRoute[i], _fullRoute[i + 1]);
+    }
+
+    setState(() {
+      _walkedKm = walked;
+      _remainingKm = remaining;
     });
   }
 
@@ -159,7 +295,12 @@ class _RoutePageState extends State<RoutePage> {
 
     if (!mounted || route.isEmpty) return;
 
+    final totalKm = RouteService.calculateRouteDistanceKm(route);
+
     setState(() {
+      _fullRoute = route;
+      _totalRouteKm = totalKm;
+      _remainingKm = totalKm;
       polylines = {
         Polyline(
           polylineId: const PolylineId('route'),
@@ -173,25 +314,71 @@ class _RoutePageState extends State<RoutePage> {
     final bounds = RouteService.boundsFromPoints(route);
     mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
 
-    // Fetch crime data along the route
     setState(() => _safetyLoading = true);
 
+    // Run both data sources in parallel for speed
     final sampled = RouteService.sampleRoutePoints(route);
-    final distanceKm = RouteService.calculateRouteDistanceKm(route);
+    debugPrint('Route: ${route.length} points, ${sampled.length} sampled, ${totalKm.toStringAsFixed(2)} km');
+    final results = await Future.wait([
+      PoliceService.getCrimesAlongRoute(
+        sampled,
+        fullRoute: route,
+        routeDistanceKm: totalKm,
+      ),
+      RoadSafetyService.getCollisionsAlongRoute(route),
+    ]);
 
-    final crimeResult = await PoliceService.getCrimesAlongRoute(
-      sampled,
-      fullRoute: route,
-      routeDistanceKm: distanceKm,
+    final crimeResult = results[0] as CrimeResult;
+    final collisionResult = results[1] as CollisionResult;
+
+    final combinedScore = CombinedSafetyScore(
+      crimeResult: crimeResult,
+      collisionResult: collisionResult,
+      routeDistanceKm: totalKm,
+    );
+
+    debugPrint(
+      'CombinedScore: ${combinedScore.safetyScore}/100 '
+      '(${combinedScore.safetyLabel}) — '
+      'crime density: ${combinedScore.crimeDensity.toStringAsFixed(2)}, '
+      'collision density: ${combinedScore.collisionDensity.toStringAsFixed(2)}',
     );
 
     if (mounted) {
       setState(() {
-        _crimeResult = crimeResult;
+        _safetyScore = combinedScore;
         _safetyLoading = false;
       });
-      _buildCrimeMarkers(crimeResult.crimePoints);
+      _buildAllMarkers(
+        crimePoints: crimeResult.crimePoints,
+        collisionPoints: collisionResult.collisionPoints,
+      );
     }
+  }
+
+  double _haversineKm(LatLng a, LatLng b) {
+    const r = 6371.0;
+    final dLat = _toRad(b.latitude - a.latitude);
+    final dLng = _toRad(b.longitude - a.longitude);
+    final h = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRad(a.latitude)) *
+            cos(_toRad(b.latitude)) *
+            sin(dLng / 2) *
+            sin(dLng / 2);
+    return r * 2 * asin(sqrt(h));
+  }
+
+  double _toRad(double deg) => deg * pi / 180;
+
+  int get _estimatedMinutesRemaining =>
+      (_remainingKm / _walkingSpeedKmh * 60).ceil();
+
+  double get _progressFraction =>
+      _totalRouteKm > 0 ? (_walkedKm / _totalRouteKm).clamp(0.0, 1.0) : 0.0;
+
+  String _formatDistance(double km) {
+    if (km < 1.0) return '${(km * 1000).round()}m';
+    return '${km.toStringAsFixed(1)}km';
   }
 
   String _getFormattedTime() {
@@ -208,6 +395,7 @@ class _RoutePageState extends State<RoutePage> {
   void dispose() {
     timer?.cancel();
     positionStream?.cancel();
+    _compassStream?.cancel();
     mapController?.dispose();
     mapController = null;
     super.dispose();
@@ -216,7 +404,9 @@ class _RoutePageState extends State<RoutePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('SafeWalk Active')),
+      appBar: AppBar(
+        title: Text(_tripStarted ? 'SafeWalk Active' : 'Plan Your Route'),
+      ),
       body: currentPosition == null
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -228,7 +418,7 @@ class _RoutePageState extends State<RoutePage> {
                       zoom: 15,
                     ),
                     myLocationEnabled: true,
-                    myLocationButtonEnabled: true,
+                    myLocationButtonEnabled: false,
                     polylines: polylines,
                     markers: markers,
                     onMapCreated: (controller) {
@@ -241,7 +431,7 @@ class _RoutePageState extends State<RoutePage> {
 
                 // Bottom panel
                 Container(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     borderRadius:
@@ -253,7 +443,7 @@ class _RoutePageState extends State<RoutePage> {
                   child: SafeArea(
                     top: false,
                     child: Padding(
-                      padding: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.only(bottom: 16),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -272,8 +462,7 @@ class _RoutePageState extends State<RoutePage> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          // Destination row
+                          const SizedBox(height: 2),
                           Row(
                             children: [
                               const Icon(Icons.location_on,
@@ -288,58 +477,207 @@ class _RoutePageState extends State<RoutePage> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _getFormattedTime(),
-                            style: const TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
 
-                          // Safety badge
+                          const SizedBox(height: 10),
+                          const Divider(height: 1),
+                          const SizedBox(height: 10),
+
+                          // ===== NAVIGATION PROGRESS (walking only) =====
+                          if (_tripStarted && _totalRouteKm > 0) ...[
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceEvenly,
+                              children: [
+                                _statBox(
+                                  icon: Icons.timer,
+                                  label: 'Elapsed',
+                                  value: _getFormattedTime(),
+                                  color: Colors.blue,
+                                ),
+                                _statBox(
+                                  icon: Icons.schedule,
+                                  label: 'Remaining',
+                                  value: '~$_estimatedMinutesRemaining min',
+                                  color: Colors.orange,
+                                ),
+                                _statBox(
+                                  icon: Icons.directions_walk,
+                                  label: 'Walked',
+                                  value: _formatDistance(_walkedKm),
+                                  color: Colors.green,
+                                ),
+                                _statBox(
+                                  icon: Icons.flag,
+                                  label: 'To go',
+                                  value: _formatDistance(_remainingKm),
+                                  color: Colors.red,
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '${(_progressFraction * 100).round()}% completed',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black54),
+                                    ),
+                                    Text(
+                                      _formatDistance(_totalRouteKm),
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black54),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: _progressFraction,
+                                    minHeight: 6,
+                                    backgroundColor: Colors.grey.shade200,
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                      Colors.blue,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 10),
+                            const Divider(height: 1),
+                            const SizedBox(height: 10),
+                          ],
+
+                          // ===== PLANNING MODE — estimated info =====
+                          if (!_tripStarted && _totalRouteKm > 0) ...[
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceEvenly,
+                              children: [
+                                _statBox(
+                                  icon: Icons.straighten,
+                                  label: 'Distance',
+                                  value: _formatDistance(_totalRouteKm),
+                                  color: Colors.blue,
+                                ),
+                                _statBox(
+                                  icon: Icons.schedule,
+                                  label: 'Est. time',
+                                  value:
+                                      '~${(_totalRouteKm / _walkingSpeedKmh * 60).ceil()} min',
+                                  color: Colors.orange,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1),
+                            const SizedBox(height: 10),
+                          ],
+
+                          // Safety badge (both modes)
                           SafetyBadge(
                             isLoading: _safetyLoading,
-                            result: _crimeResult,
+                            result: _safetyScore,
                           ),
 
                           const SizedBox(height: 8),
 
                           // Map legend
-                          if (_crimeResult != null)
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                          if (_safetyScore != null)
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 4,
+                              alignment: WrapAlignment.center,
                               children: const [
-                                Icon(Icons.location_on,
-                                    size: 14, color: Colors.red),
-                                SizedBox(width: 4),
-                                Text('Violent',
-                                    style: TextStyle(fontSize: 11)),
-                                SizedBox(width: 12),
-                                Icon(Icons.location_on,
-                                    size: 14, color: Colors.amber),
-                                SizedBox(width: 4),
-                                Text('Other crime',
-                                    style: TextStyle(fontSize: 11)),
-                                SizedBox(width: 12),
-                                Icon(Icons.location_on,
-                                    size: 14, color: Colors.blue),
-                                SizedBox(width: 4),
-                                Text('Origin',
-                                    style: TextStyle(fontSize: 11)),
+                                _LegendItem(
+                                    color: Colors.red, label: 'Violent crime'),
+                                _LegendItem(
+                                    color: Colors.amber,
+                                    label: 'Other crime'),
+                                _LegendItem(
+                                    color: Colors.purple,
+                                    label: 'Fatal collision'),
+                                _LegendItem(
+                                    color: Colors.orange,
+                                    label: 'Serious collision'),
                               ],
                             ),
 
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text("I'm Safe - End Trip"),
+                          const SizedBox(height: 12),
+
+                          // ===== BUTTONS =====
+                          if (!_tripStarted) ...[
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed:
+                                    _safetyLoading ? null : _startTrip,
+                                icon: const Icon(Icons.directions_walk),
+                                label: const Text('Start Trip'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 14),
+                                  textStyle: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                          ] else ...[
+                            Row(
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _toggleHeadingUp,
+                                  icon: Icon(
+                                    _headingUp
+                                        ? Icons.navigation
+                                        : Icons.explore,
+                                    size: 18,
+                                  ),
+                                  label: Text(
+                                    _headingUp ? 'Heading' : 'North',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: _headingUp
+                                        ? Colors.blue
+                                        : Colors.grey,
+                                    side: BorderSide(
+                                      color: _headingUp
+                                          ? Colors.blue
+                                          : Colors.grey,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child:
+                                        const Text("I'm Safe - End Trip"),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -347,6 +685,52 @@ class _RoutePageState extends State<RoutePage> {
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _statBox({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.black45),
+        ),
+      ],
+    );
+  }
+}
+
+/// Small legend item used in the map legend row.
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _LegendItem({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.location_on, size: 13, color: color),
+        const SizedBox(width: 3),
+        Text(label, style: const TextStyle(fontSize: 10)),
+      ],
     );
   }
 }
