@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'police_service.dart';
 import 'road_safety_service.dart';
+import 'osm_service.dart';
 
-/// Combines crime data and road collision data into a single safety score.
+/// Combines crime, collision and pedestrian infrastructure
+/// data into a single safety score.
 class CombinedSafetyScore {
   final CrimeResult crimeResult;
   final CollisionResult collisionResult;
+  final OsmResult osmResult;
   final double routeDistanceKm;
 
   const CombinedSafetyScore({
     required this.crimeResult,
     required this.collisionResult,
+    required this.osmResult,
     required this.routeDistanceKm,
   });
 
@@ -29,9 +33,6 @@ class CombinedSafetyScore {
   ///
   /// Formula: risk = 100 × density / (density + knee)
   ///
-  /// The "knee" is the density at which risk = 50%.
-  /// Below knee → mostly safe, above knee → mostly risky.
-  ///
   /// Calibrated against known London routes:
   /// - Richmond → Kew:       crime ~8/km   → 🟢 80
   /// - Muswell Hill:         crime ~3/km   → 🟢 89
@@ -46,18 +47,28 @@ class CombinedSafetyScore {
   }
 
   /// Crime risk score (0–100, higher = more risky)
-  /// knee = 50: risk hits 50% at density 50/km
   double get crimeRiskScore => _riskScore(crimeDensity, knee: 50);
 
   /// Collision risk score (0–100, higher = more risky)
-  /// knee = 15: risk hits 50% at collision density 15/km
   double get collisionRiskScore => _riskScore(collisionDensity, knee: 15);
 
-  /// Combined risk:
-  /// - Crime 70% — pedestrian-specific, route-relevant
-  /// - Collision 30% — covers all road users not just pedestrians
+  /// OSM infrastructure risk score (0–100, higher = more risky)
+  /// Inverted from infrastructureScore since higher infra = safer
+  double get osmRiskScore =>
+      (100 - osmResult.infrastructureScore).clamp(0.0, 100.0);
+
+  /// Combined risk score:
+  /// - Crime 60%       — pedestrian-specific, route-relevant
+  /// - Collision 25%   — road danger, all users
+  /// - OSM infra 15%   — pavement, lighting, speed limits
+  ///
+  /// OSM weight is lower because:
+  /// - Not all segments have full tag coverage
+  /// - Infrastructure is slower to change than crime patterns
   double get combinedRiskScore =>
-      (crimeRiskScore * 0.7) + (collisionRiskScore * 0.3);
+      (crimeRiskScore * 0.60) +
+      (collisionRiskScore * 0.25) +
+      (osmRiskScore * 0.15);
 
   /// 0–100 safety score. 100 = safest, 0 = most dangerous.
   int get safetyScore =>
@@ -88,9 +99,10 @@ class CombinedSafetyScore {
       '(${collisionResult.fatalCollisions} fatal, '
       '${collisionResult.seriousCollisions} serious)';
 
+  /// OSM infrastructure summary.
+  String get osmSummary => osmResult.summary;
+
   /// Date range label for crime data.
-  /// Police API has ~3-4 month lag so we query 4-6 months back.
-  /// e.g. "Oct–Dec 2025"
   String get crimePeriodLabel {
     final now = DateTime.now();
     final from = DateTime(now.year, now.month - 6);
@@ -103,6 +115,8 @@ class CombinedSafetyScore {
   }
 
   /// Date range label for collision data.
-  /// DfT data covers 2022–2024 (3 years for statistical reliability).
   String get collisionPeriodLabel => '2022–2024';
+
+  /// OSM data is continuously updated by volunteers.
+  String get osmPeriodLabel => 'live data';
 }

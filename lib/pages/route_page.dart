@@ -7,6 +7,7 @@ import '../services/location_service.dart';
 import '../services/route_service.dart';
 import '../services/police_service.dart';
 import '../services/road_safety_service.dart';
+import '../services/osm_service.dart';
 import '../services/combined_safety_score.dart';
 import '../widgets/safety_badge.dart';
 
@@ -43,6 +44,7 @@ class _RoutePageState extends State<RoutePage> {
   bool _locationReady = false;
   bool _headingUp = false;
   bool _tripStarted = false;
+  bool _legendVisible = true; // toggle legend visibility
 
   List<LatLng> _fullRoute = [];
   double _totalRouteKm = 0;
@@ -75,7 +77,6 @@ class _RoutePageState extends State<RoutePage> {
     });
   }
 
-  /// Origin = blue, Destination = green (clearly distinct from red crime pins)
   void _initMarkers() {
     setState(() {
       markers = {
@@ -105,7 +106,6 @@ class _RoutePageState extends State<RoutePage> {
     required List<CrimePoint> crimePoints,
     required List<CollisionPoint> collisionPoints,
   }) {
-    // ── Crime markers — only high-concern (weight ≥ 2.0) ──────
     final highConcernCrimes =
         crimePoints.where((c) => c.isViolent).toList();
 
@@ -143,7 +143,6 @@ class _RoutePageState extends State<RoutePage> {
       );
     }).toSet();
 
-    // ── Collision markers ──────────────────────────────────────
     final collisionMarkers = collisionPoints.map((collision) {
       return Marker(
         markerId: MarkerId(
@@ -152,8 +151,8 @@ class _RoutePageState extends State<RoutePage> {
         position: collision.location,
         icon: BitmapDescriptor.defaultMarkerWithHue(
           collision.isFatal
-              ? BitmapDescriptor.hueViolet  // purple = fatal
-              : BitmapDescriptor.hueOrange, // orange = serious
+              ? BitmapDescriptor.hueViolet
+              : BitmapDescriptor.hueOrange,
         ),
         infoWindow: InfoWindow(
           title: collision.label,
@@ -164,14 +163,8 @@ class _RoutePageState extends State<RoutePage> {
       );
     }).toSet();
 
-    debugPrint(
-      'Markers: ${crimeMarkers.length} high-concern, '
-      '${collisionMarkers.length} collisions',
-    );
-
     setState(() {
       markers = {
-        // Origin and destination always on top (zIndex 3)
         Marker(
           markerId: const MarkerId('origin'),
           position: widget.originLatLng,
@@ -287,6 +280,27 @@ class _RoutePageState extends State<RoutePage> {
     }
   }
 
+  void _buildColouredPolylines(
+    List<LatLng> route,
+    List<double> scores,
+  ) {
+    if (route.length < 2 || scores.isEmpty) return;
+
+    final coloured = <Polyline>{};
+
+    for (int i = 0; i < route.length - 1; i++) {
+      final score = i < scores.length ? scores[i] : 50.0;
+      coloured.add(Polyline(
+        polylineId: PolylineId('seg_$i'),
+        points: [route[i], route[i + 1]],
+        width: 7,
+        color: OsmService.scoreToColor(score),
+      ));
+    }
+
+    setState(() => polylines = coloured);
+  }
+
   Future<void> _drawRoute() async {
     final route = await RouteService.getWalkingRoute(
       origin: widget.originLatLng,
@@ -330,23 +344,30 @@ class _RoutePageState extends State<RoutePage> {
         routeDistanceKm: totalKm,
       ),
       RoadSafetyService.getCollisionsAlongRoute(route),
+      OsmService.getInfrastructureScore(route),
     ]);
 
     final crimeResult = results[0] as CrimeResult;
     final collisionResult = results[1] as CollisionResult;
+    final osmResult = results[2] as OsmResult;
+
+    if (mounted && osmResult.routePointScores.isNotEmpty) {
+      _buildColouredPolylines(route, osmResult.routePointScores);
+    }
 
     final combinedScore = CombinedSafetyScore(
       crimeResult: crimeResult,
       collisionResult: collisionResult,
+      osmResult: osmResult,
       routeDistanceKm: totalKm,
     );
 
     debugPrint(
       'CombinedScore: ${combinedScore.safetyScore}/100 '
       '(${combinedScore.safetyLabel}) — '
-      'crime density: ${combinedScore.crimeDensity.toStringAsFixed(2)}, '
-      'collision density: '
-      '${combinedScore.collisionDensity.toStringAsFixed(2)}',
+      'crime: ${combinedScore.crimeDensity.toStringAsFixed(2)}, '
+      'collision: ${combinedScore.collisionDensity.toStringAsFixed(2)}, '
+      'osm infra: ${osmResult.infrastructureScore.toStringAsFixed(1)}',
     );
 
     if (mounted) {
@@ -417,20 +438,156 @@ class _RoutePageState extends State<RoutePage> {
           : Column(
               children: [
                 Expanded(
-                  child: GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: widget.originLatLng,
-                      zoom: 15,
-                    ),
-                    myLocationEnabled: true,
-                    myLocationButtonEnabled: false,
-                    polylines: polylines,
-                    markers: markers,
-                    onMapCreated: (controller) {
-                      mapController = controller;
-                      setState(() => _mapReady = true);
-                      _tryDrawRoute();
-                    },
+                  child: Stack(
+                    children: [
+                      // ── Google Map ──────────────────────────
+                      GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: widget.originLatLng,
+                          zoom: 15,
+                        ),
+                        myLocationEnabled: true,
+                        myLocationButtonEnabled: false,
+                        polylines: polylines,
+                        markers: markers,
+                        onMapCreated: (controller) {
+                          mapController = controller;
+                          setState(() => _mapReady = true);
+                          _tryDrawRoute();
+                        },
+                      ),
+
+                      // ── Floating legend — bottom left ───────
+                      if (_safetyScore != null)
+                        Positioned(
+                          bottom: 12,
+                          left: 12,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Toggle button
+                              GestureDetector(
+                                onTap: () => setState(
+                                  () => _legendVisible = !_legendVisible,
+                                ),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.92),
+                                    borderRadius: BorderRadius.circular(6),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Colors.black26,
+                                        blurRadius: 4,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.map,
+                                          size: 12,
+                                          color: Colors.black54),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _legendVisible
+                                            ? 'Hide legend'
+                                            : 'Show legend',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              // Legend panel
+                              if (_legendVisible) ...[
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.92),
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Colors.black26,
+                                        blurRadius: 4,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: const [
+                                      // Pins
+                                      _LegendItem(
+                                        color: Colors.blue,
+                                        label: 'Origin',
+                                      ),
+                                      SizedBox(height: 3),
+                                      _LegendItem(
+                                        color: Colors.green,
+                                        label: 'Destination',
+                                      ),
+                                      SizedBox(height: 3),
+                                      _LegendItem(
+                                        color: Colors.red,
+                                        label: 'High-concern incident',
+                                      ),
+                                      SizedBox(height: 3),
+                                      _LegendItem(
+                                        color: Colors.deepPurple,
+                                        label: 'Fatal collision',
+                                      ),
+                                      SizedBox(height: 3),
+                                      _LegendItem(
+                                        color: Colors.orange,
+                                        label: 'Serious collision',
+                                      ),
+                                      SizedBox(height: 6),
+                                      Divider(
+                                        height: 1,
+                                        color: Colors.black12,
+                                      ),
+                                      SizedBox(height: 6),
+                                      // Path colours
+                                      _PathLegendItem(
+                                        color: Colors.green,
+                                        label: 'Good path',
+                                      ),
+                                      SizedBox(height: 3),
+                                      _PathLegendItem(
+                                        color: Colors.amber,
+                                        label: 'Moderate path',
+                                      ),
+                                      SizedBox(height: 3),
+                                      _PathLegendItem(
+                                        color: Colors.orange,
+                                        label: 'Poor path',
+                                      ),
+                                      SizedBox(height: 3),
+                                      _PathLegendItem(
+                                        color: Colors.red,
+                                        label: 'Dangerous path',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 ),
 
@@ -596,38 +753,6 @@ class _RoutePageState extends State<RoutePage> {
                             result: _safetyScore,
                           ),
 
-                          const SizedBox(height: 8),
-
-                          // Map legend
-                          if (_safetyScore != null)
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 4,
-                              alignment: WrapAlignment.center,
-                              children: const [
-                                _LegendItem(
-                                  color: Colors.blue,
-                                  label: 'Origin',
-                                ),
-                                _LegendItem(
-                                  color: Colors.green,
-                                  label: 'Destination',
-                                ),
-                                _LegendItem(
-                                  color: Colors.red,
-                                  label: 'High-concern incident',
-                                ),
-                                _LegendItem(
-                                  color: Colors.deepPurple,
-                                  label: 'Fatal collision',
-                                ),
-                                _LegendItem(
-                                  color: Colors.orange,
-                                  label: 'Serious collision',
-                                ),
-                              ],
-                            ),
-
                           const SizedBox(height: 12),
 
                           // ===== BUTTONS =====
@@ -729,7 +854,7 @@ class _RoutePageState extends State<RoutePage> {
   }
 }
 
-/// Small legend item used in the map legend.
+/// Pin legend item — shows a location pin icon.
 class _LegendItem extends StatelessWidget {
   final Color color;
   final String label;
@@ -742,6 +867,33 @@ class _LegendItem extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.location_on, size: 13, color: color),
+        const SizedBox(width: 3),
+        Text(label, style: const TextStyle(fontSize: 10)),
+      ],
+    );
+  }
+}
+
+/// Path legend item — shows a coloured line instead of a pin.
+class _PathLegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _PathLegendItem({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 20,
+          height: 4,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
         const SizedBox(width: 3),
         Text(label, style: const TextStyle(fontSize: 10)),
       ],

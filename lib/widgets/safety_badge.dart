@@ -92,7 +92,7 @@ class SafetyBadge extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          // Crime summary row
+          // Crime summary row — period shown in source note below
           Row(
             children: [
               const Icon(Icons.local_police,
@@ -100,7 +100,7 @@ class SafetyBadge extends StatelessWidget {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  '${result!.crimeSummary} · ${result!.crimePeriodLabel}',
+                  result!.crimeSummary,
                   style: const TextStyle(
                       fontSize: 12, color: Colors.black54),
                 ),
@@ -118,7 +118,25 @@ class SafetyBadge extends StatelessWidget {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  '${result!.collisionSummary} · ${result!.collisionPeriodLabel}',
+                  result!.collisionSummary,
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.black54),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 2),
+
+          // OSM infrastructure summary row
+          Row(
+            children: [
+              const Icon(Icons.streetview,
+                  size: 13, color: Colors.black45),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  result!.osmSummary,
                   style: const TextStyle(
                       fontSize: 12, color: Colors.black54),
                 ),
@@ -130,15 +148,19 @@ class SafetyBadge extends StatelessWidget {
           const Divider(height: 1, color: Colors.black12),
           const SizedBox(height: 6),
 
-          // Data source note
+          // Data source note — includes period labels for all three sources
           Row(
-            children: const [
-              Icon(Icons.info_outline, size: 11, color: Colors.black26),
-              SizedBox(width: 4),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline,
+                  size: 11, color: Colors.black26),
+              const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  'Crime: Met Police · Collisions: Dept for Transport',
-                  style: TextStyle(
+                  'Crime: Met Police (${result!.crimePeriodLabel}) · '
+                  'Collisions: Dept for Transport (${result!.collisionPeriodLabel}) · '
+                  'Infrastructure: OpenStreetMap (${result!.osmPeriodLabel})',
+                  style: const TextStyle(
                     fontSize: 10,
                     color: Colors.black38,
                     fontStyle: FontStyle.italic,
