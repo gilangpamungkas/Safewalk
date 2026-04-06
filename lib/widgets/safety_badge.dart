@@ -90,7 +90,7 @@ class SafetyBadge extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
           // Crime summary row
           Row(
@@ -98,9 +98,12 @@ class SafetyBadge extends StatelessWidget {
               const Icon(Icons.local_police,
                   size: 13, color: Colors.black45),
               const SizedBox(width: 4),
-              Text(
-                result!.crimeSummary,
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              Expanded(
+                child: Text(
+                  '${result!.crimeSummary} · ${result!.crimePeriodLabel}',
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.black54),
+                ),
               ),
             ],
           ),
@@ -113,9 +116,34 @@ class SafetyBadge extends StatelessWidget {
               const Icon(Icons.car_crash,
                   size: 13, color: Colors.black45),
               const SizedBox(width: 4),
-              Text(
-                result!.collisionSummary,
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              Expanded(
+                child: Text(
+                  '${result!.collisionSummary} · ${result!.collisionPeriodLabel}',
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.black54),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+          const Divider(height: 1, color: Colors.black12),
+          const SizedBox(height: 6),
+
+          // Data source note
+          Row(
+            children: const [
+              Icon(Icons.info_outline, size: 11, color: Colors.black26),
+              SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  'Crime: Met Police · Collisions: Dept for Transport',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.black38,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               ),
             ],
           ),

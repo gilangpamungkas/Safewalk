@@ -44,7 +44,6 @@ class _RoutePageState extends State<RoutePage> {
   bool _headingUp = false;
   bool _tripStarted = false;
 
-  // Route progress
   List<LatLng> _fullRoute = [];
   double _totalRouteKm = 0;
   double _walkedKm = 0;
@@ -76,6 +75,7 @@ class _RoutePageState extends State<RoutePage> {
     });
   }
 
+  /// Origin = blue, Destination = green (clearly distinct from red crime pins)
   void _initMarkers() {
     setState(() {
       markers = {
@@ -85,17 +85,17 @@ class _RoutePageState extends State<RoutePage> {
           icon: BitmapDescriptor.defaultMarkerWithHue(
             BitmapDescriptor.hueBlue,
           ),
-          infoWindow: InfoWindow(title: widget.origin),
-          zIndex: 2,
+          infoWindow: InfoWindow(title: '📍 ${widget.origin}'),
+          zIndex: 3,
         ),
         Marker(
           markerId: const MarkerId('destination'),
           position: widget.destinationLatLng,
           icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueRed,
+            BitmapDescriptor.hueGreen,
           ),
-          infoWindow: InfoWindow(title: widget.destination),
-          zIndex: 2,
+          infoWindow: InfoWindow(title: '🏁 ${widget.destination}'),
+          zIndex: 3,
         ),
       };
     });
@@ -105,9 +105,12 @@ class _RoutePageState extends State<RoutePage> {
     required List<CrimePoint> crimePoints,
     required List<CollisionPoint> collisionPoints,
   }) {
-    // ── Crime markers ──────────────────────────────────────────
+    // ── Crime markers — only high-concern (weight ≥ 2.0) ──────
+    final highConcernCrimes =
+        crimePoints.where((c) => c.isViolent).toList();
+
     final Map<String, List<CrimePoint>> grouped = {};
-    for (final crime in crimePoints) {
+    for (final crime in highConcernCrimes) {
       final key =
           '${crime.location.latitude},${crime.location.longitude}';
       grouped.putIfAbsent(key, () => []).add(crime);
@@ -115,7 +118,6 @@ class _RoutePageState extends State<RoutePage> {
 
     final crimeMarkers = grouped.entries.map((entry) {
       final crimes = entry.value;
-      final hasViolent = crimes.any((c) => c.isViolent);
       final count = crimes.length;
 
       final latestMonth = crimes
@@ -125,7 +127,7 @@ class _RoutePageState extends State<RoutePage> {
           crimes.firstWhere((c) => c.month == latestMonth).monthLabel;
 
       final title = count > 1
-          ? '$count crimes at this location'
+          ? '$count incidents at this location'
           : crimes.first.category;
       final snippet = '${crimes.first.street} · latest: $latestLabel';
 
@@ -133,9 +135,7 @@ class _RoutePageState extends State<RoutePage> {
         markerId: MarkerId('crime_${entry.key}'),
         position: crimes.first.location,
         icon: BitmapDescriptor.defaultMarkerWithHue(
-          hasViolent
-              ? BitmapDescriptor.hueRed
-              : BitmapDescriptor.hueYellow,
+          BitmapDescriptor.hueRed,
         ),
         infoWindow: InfoWindow(title: title, snippet: snippet),
         alpha: 0.85,
@@ -165,30 +165,30 @@ class _RoutePageState extends State<RoutePage> {
     }).toSet();
 
     debugPrint(
-      'Markers: ${crimeMarkers.length} crime locations, '
-      '${collisionMarkers.length} collision locations',
+      'Markers: ${crimeMarkers.length} high-concern, '
+      '${collisionMarkers.length} collisions',
     );
 
     setState(() {
       markers = {
-        // Origin and destination always on top
+        // Origin and destination always on top (zIndex 3)
         Marker(
           markerId: const MarkerId('origin'),
           position: widget.originLatLng,
           icon: BitmapDescriptor.defaultMarkerWithHue(
             BitmapDescriptor.hueBlue,
           ),
-          infoWindow: InfoWindow(title: widget.origin),
-          zIndex: 2,
+          infoWindow: InfoWindow(title: '📍 ${widget.origin}'),
+          zIndex: 3,
         ),
         Marker(
           markerId: const MarkerId('destination'),
           position: widget.destinationLatLng,
           icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueRed,
+            BitmapDescriptor.hueGreen,
           ),
-          infoWindow: InfoWindow(title: widget.destination),
-          zIndex: 2,
+          infoWindow: InfoWindow(title: '🏁 ${widget.destination}'),
+          zIndex: 3,
         ),
         ...crimeMarkers,
         ...collisionMarkers,
@@ -316,9 +316,13 @@ class _RoutePageState extends State<RoutePage> {
 
     setState(() => _safetyLoading = true);
 
-    // Run both data sources in parallel for speed
     final sampled = RouteService.sampleRoutePoints(route);
-    debugPrint('Route: ${route.length} points, ${sampled.length} sampled, ${totalKm.toStringAsFixed(2)} km');
+    debugPrint(
+      'Route: ${route.length} points, '
+      '${sampled.length} sampled, '
+      '${totalKm.toStringAsFixed(2)} km',
+    );
+
     final results = await Future.wait([
       PoliceService.getCrimesAlongRoute(
         sampled,
@@ -341,7 +345,8 @@ class _RoutePageState extends State<RoutePage> {
       'CombinedScore: ${combinedScore.safetyScore}/100 '
       '(${combinedScore.safetyLabel}) — '
       'crime density: ${combinedScore.crimeDensity.toStringAsFixed(2)}, '
-      'collision density: ${combinedScore.collisionDensity.toStringAsFixed(2)}',
+      'collision density: '
+      '${combinedScore.collisionDensity.toStringAsFixed(2)}',
     );
 
     if (mounted) {
@@ -466,7 +471,7 @@ class _RoutePageState extends State<RoutePage> {
                           Row(
                             children: [
                               const Icon(Icons.location_on,
-                                  size: 16, color: Colors.red),
+                                  size: 16, color: Colors.green),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
@@ -601,16 +606,25 @@ class _RoutePageState extends State<RoutePage> {
                               alignment: WrapAlignment.center,
                               children: const [
                                 _LegendItem(
-                                    color: Colors.red, label: 'Violent crime'),
+                                  color: Colors.blue,
+                                  label: 'Origin',
+                                ),
                                 _LegendItem(
-                                    color: Colors.amber,
-                                    label: 'Other crime'),
+                                  color: Colors.green,
+                                  label: 'Destination',
+                                ),
                                 _LegendItem(
-                                    color: Colors.purple,
-                                    label: 'Fatal collision'),
+                                  color: Colors.red,
+                                  label: 'High-concern incident',
+                                ),
                                 _LegendItem(
-                                    color: Colors.orange,
-                                    label: 'Serious collision'),
+                                  color: Colors.deepPurple,
+                                  label: 'Fatal collision',
+                                ),
+                                _LegendItem(
+                                  color: Colors.orange,
+                                  label: 'Serious collision',
+                                ),
                               ],
                             ),
 
@@ -715,7 +729,7 @@ class _RoutePageState extends State<RoutePage> {
   }
 }
 
-/// Small legend item used in the map legend row.
+/// Small legend item used in the map legend.
 class _LegendItem extends StatelessWidget {
   final Color color;
   final String label;
