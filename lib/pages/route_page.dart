@@ -8,9 +8,11 @@ import '../services/route_service.dart';
 import '../services/police_service.dart';
 import '../services/road_safety_service.dart';
 import '../services/osm_service.dart';
+import '../services/report_service.dart';
 import '../services/combined_safety_score.dart';
 import '../widgets/safety_badge.dart';
 import '../widgets/sos_button.dart';
+import '../widgets/report_button.dart';
 
 class RoutePage extends StatefulWidget {
   final String origin;
@@ -48,7 +50,7 @@ class _RoutePageState extends State<RoutePage> {
   bool _headingUp = false;
   bool _tripStarted = false;
   bool _legendVisible = true;
-  bool _disposed = false; // guard against post-dispose setState
+  bool _disposed = false;
 
   List<LatLng> _fullRoute = [];
   double _totalRouteKm = 0;
@@ -57,6 +59,9 @@ class _RoutePageState extends State<RoutePage> {
 
   bool _safetyLoading = false;
   CombinedSafetyScore? _safetyScore;
+
+  // User reports
+  List<UserReport> _userReports = [];
 
   static const double _walkingSpeedKmh = 5.0;
 
@@ -68,7 +73,6 @@ class _RoutePageState extends State<RoutePage> {
     _listenToCompass();
   }
 
-  // ── Safe setState — no-ops after dispose ──────────────────
   void _safeSetState(VoidCallback fn) {
     if (!_disposed && mounted) setState(fn);
   }
@@ -113,6 +117,7 @@ class _RoutePageState extends State<RoutePage> {
   void _buildAllMarkers({
     required List<CrimePoint> crimePoints,
     required List<CollisionPoint> collisionPoints,
+    List<UserReport>? userReports,
   }) {
     if (_disposed || !mounted) return;
 
@@ -171,6 +176,25 @@ class _RoutePageState extends State<RoutePage> {
       );
     }).toSet();
 
+    // ── User report markers ────────────────────────────────
+    final reportMarkers = (userReports ?? _userReports).map((report) {
+      return Marker(
+        markerId: MarkerId('report_${report.id}'),
+        position: report.location,
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          BitmapDescriptor.hueCyan,
+        ),
+        infoWindow: InfoWindow(
+          title: '${report.emoji} ${report.label}',
+          snippet: report.description?.isNotEmpty == true
+              ? report.description
+              : 'Reported by community',
+        ),
+        alpha: 0.95,
+        zIndex: 2,
+      );
+    }).toSet();
+
     _safeSetState(() {
       _markers = {
         Marker(
@@ -193,8 +217,35 @@ class _RoutePageState extends State<RoutePage> {
         ),
         ...crimeMarkers,
         ...collisionMarkers,
+        ...reportMarkers,
       };
     });
+  }
+
+  /// Loads user reports from Firestore and refreshes markers.
+  Future<void> _loadUserReports() async {
+    if (_fullRoute.isEmpty || _disposed || !mounted) return;
+    try {
+      final reports = await ReportService.getReportsNearRoute(_fullRoute);
+      if (_disposed || !mounted) return;
+      _safeSetState(() => _userReports = reports);
+
+      // Rebuild markers to include new reports
+      if (_safetyScore != null) {
+        _buildAllMarkers(
+          crimePoints: _safetyScore!.crimeResult.crimePoints,
+          collisionPoints:
+              _safetyScore!.collisionResult.collisionPoints,
+          userReports: reports,
+        );
+      }
+
+      debugPrint(
+        'ReportService: loaded ${reports.length} reports near route',
+      );
+    } catch (e) {
+      debugPrint('ReportService: error loading reports: $e');
+    }
   }
 
   void _startTrip() {
@@ -345,6 +396,7 @@ class _RoutePageState extends State<RoutePage> {
 
     final sampled = RouteService.sampleRoutePoints(route);
 
+    // Run all data sources in parallel including user reports
     final results = await Future.wait([
       PoliceService.getCrimesAlongRoute(
         sampled,
@@ -353,14 +405,17 @@ class _RoutePageState extends State<RoutePage> {
       ),
       RoadSafetyService.getCollisionsAlongRoute(route),
       OsmService.getInfrastructureScore(route),
+      ReportService.getReportsNearRoute(route),
     ]);
 
-    // Guard again after all async work completes
     if (_disposed || !mounted) return;
 
     final crimeResult = results[0] as CrimeResult;
     final collisionResult = results[1] as CollisionResult;
     final osmResult = results[2] as OsmResult;
+    final userReports = results[3] as List<UserReport>;
+
+    _safeSetState(() => _userReports = userReports);
 
     if (osmResult.routePointScores.isNotEmpty) {
       _buildColouredPolylines(route, osmResult.routePointScores);
@@ -381,7 +436,8 @@ class _RoutePageState extends State<RoutePage> {
       'collision: ${combinedScore.collisionDensity.toStringAsFixed(2)}, '
       'osm: ${osmResult.infrastructureScore.toStringAsFixed(1)}, '
       'time: ×${combinedScore.timeMultiplier} '
-      '(${combinedScore.timePeriodLabel})',
+      '(${combinedScore.timePeriodLabel}), '
+      'reports: ${userReports.length}',
     );
 
     _safeSetState(() {
@@ -392,6 +448,7 @@ class _RoutePageState extends State<RoutePage> {
     _buildAllMarkers(
       crimePoints: crimeResult.crimePoints,
       collisionPoints: collisionResult.collisionPoints,
+      userReports: userReports,
     );
   }
 
@@ -434,21 +491,15 @@ class _RoutePageState extends State<RoutePage> {
 
   @override
   void dispose() {
-    // Mark disposed FIRST — stops all callbacks immediately
     _disposed = true;
-
-    // Cancel all streams and timers
     _timer?.cancel();
     _timer = null;
     _positionStream?.cancel();
     _positionStream = null;
     _compassStream?.cancel();
     _compassStream = null;
-
-    // Dispose map controller last
     _mapController?.dispose();
     _mapController = null;
-
     super.dispose();
   }
 
@@ -502,6 +553,16 @@ class _RoutePageState extends State<RoutePage> {
                         },
                       ),
 
+                      // ── Report button — bottom right above SOS
+                      Positioned(
+                        bottom: 80,
+                        right: 12,
+                        child: ReportButton(
+                          currentPosition: _currentPosition,
+                          onReportSubmitted: _loadUserReports,
+                        ),
+                      ),
+
                       // ── SOS button — bottom right ───────────
                       Positioned(
                         bottom: 12,
@@ -521,7 +582,8 @@ class _RoutePageState extends State<RoutePage> {
                             children: [
                               GestureDetector(
                                 onTap: () => _safeSetState(
-                                  () => _legendVisible = !_legendVisible,
+                                  () =>
+                                      _legendVisible = !_legendVisible,
                                 ),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
@@ -531,7 +593,8 @@ class _RoutePageState extends State<RoutePage> {
                                   decoration: BoxDecoration(
                                     color:
                                         Colors.white.withOpacity(0.92),
-                                    borderRadius: BorderRadius.circular(6),
+                                    borderRadius:
+                                        BorderRadius.circular(6),
                                     boxShadow: const [
                                       BoxShadow(
                                         color: Colors.black26,
@@ -569,7 +632,8 @@ class _RoutePageState extends State<RoutePage> {
                                   decoration: BoxDecoration(
                                     color:
                                         Colors.white.withOpacity(0.92),
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius:
+                                        BorderRadius.circular(8),
                                     boxShadow: const [
                                       BoxShadow(
                                         color: Colors.black26,
@@ -601,6 +665,10 @@ class _RoutePageState extends State<RoutePage> {
                                       _LegendItem(
                                           color: Colors.orange,
                                           label: 'Serious collision'),
+                                      SizedBox(height: 3),
+                                      _LegendItem(
+                                          color: Colors.cyan,
+                                          label: 'Community report'),
                                       SizedBox(height: 6),
                                       Divider(
                                           height: 1,
@@ -637,8 +705,8 @@ class _RoutePageState extends State<RoutePage> {
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                   decoration: const BoxDecoration(
                     color: Colors.white,
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(20)),
+                    borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20)),
                     boxShadow: [
                       BoxShadow(color: Colors.black12, blurRadius: 10),
                     ],
@@ -722,7 +790,8 @@ class _RoutePageState extends State<RoutePage> {
                             const SizedBox(height: 8),
 
                             Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   mainAxisAlignment:
@@ -744,7 +813,8 @@ class _RoutePageState extends State<RoutePage> {
                                 ),
                                 const SizedBox(height: 4),
                                 ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius:
+                                      BorderRadius.circular(4),
                                   child: LinearProgressIndicator(
                                     value: _progressFraction,
                                     minHeight: 6,
@@ -795,6 +865,26 @@ class _RoutePageState extends State<RoutePage> {
                             result: _safetyScore,
                           ),
 
+                          // Community reports count
+                          if (_userReports.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(Icons.people,
+                                    size: 13, color: Colors.cyan),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${_userReports.length} community '
+                                  '${_userReports.length == 1 ? 'report' : 'reports'} near route',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+
                           const SizedBox(height: 12),
 
                           // ===== BUTTONS =====
@@ -804,7 +894,8 @@ class _RoutePageState extends State<RoutePage> {
                               child: ElevatedButton.icon(
                                 onPressed:
                                     _safetyLoading ? null : _startTrip,
-                                icon: const Icon(Icons.directions_walk),
+                                icon:
+                                    const Icon(Icons.directions_walk),
                                 label: const Text('Start Trip'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.blue,
@@ -831,8 +922,8 @@ class _RoutePageState extends State<RoutePage> {
                                   ),
                                   label: Text(
                                     _headingUp ? 'Heading' : 'North',
-                                    style:
-                                        const TextStyle(fontSize: 12),
+                                    style: const TextStyle(
+                                        fontSize: 12),
                                   ),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: _headingUp

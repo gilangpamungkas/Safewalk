@@ -1,0 +1,36 @@
+<svg width="100%" viewBox="0 0 680 680" role="img">
+  <title>SafeWalk app icon v2</title>
+  <desc>Dark navy rounded square with a teal location pin containing a walking person</desc>
+
+  <rect width="680" height="680" rx="148" fill="#0D1B2A"/>
+
+  <line x1="0" y1="227" x2="680" y2="227" stroke="#1A2E42" stroke-width="1"/>
+  <line x1="0" y1="453" x2="680" y2="453" stroke="#1A2E42" stroke-width="1"/>
+  <line x1="227" y1="0" x2="227" y2="680" stroke="#1A2E42" stroke-width="1"/>
+  <line x1="453" y1="0" x2="453" y2="680" stroke="#1A2E42" stroke-width="1"/>
+
+  <path d="M340 120 C270 120 215 178 215 248 C215 330 300 415 340 460 C380 415 465 330 465 248 C465 178 410 120 340 120 Z"
+        fill="#00BCD4"/>
+
+  <circle cx="340" cy="245" r="62" fill="#0D1B2A"/>
+
+  <circle cx="340" cy="200" r="18" fill="#00BCD4"/>
+  <line x1="340" y1="218" x2="340" y2="270" stroke="#00BCD4" stroke-width="12" stroke-linecap="round"/>
+  <line x1="340" y1="232" x2="312" y2="258" stroke="#00BCD4" stroke-width="10" stroke-linecap="round"/>
+  <line x1="340" y1="232" x2="365" y2="250" stroke="#00BCD4" stroke-width="10" stroke-linecap="round"/>
+  <path d="M340 270 L316 300 L305 325" fill="none" stroke="#00BCD4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M340 270 L362 300 L375 322" fill="none" stroke="#00BCD4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <ellipse cx="340" cy="468" rx="32" ry="8" fill="#009AB5" opacity="0.5"/>
+
+  <circle cx="280" cy="548" r="10" fill="#00BCD4" opacity="0.4"/>
+  <circle cx="340" cy="548" r="10" fill="#00BCD4" opacity="0.7"/>
+  <circle cx="400" cy="548" r="10" fill="#00BCD4"/>
+
+  <path d="M225 170 C235 145 255 125 280 112" fill="none" stroke="#4DD0E1" stroke-width="6" stroke-linecap="round"/>
+  <path d="M455 170 C445 145 425 125 400 112" fill="none" stroke="#4DD0E1" stroke-width="6" stroke-linecap="round"/>
+
+  <path d="M430 380 L455 390 L455 415 C455 430 443 440 430 445 C417 440 405 430 405 415 L405 390 Z"
+        fill="#4CAF50"/>
+  <path d="M420 413 L428 422 L445 402" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
