@@ -10,12 +10,14 @@ class CombinedSafetyScore {
   final CollisionResult collisionResult;
   final OsmResult osmResult;
   final double routeDistanceKm;
+  final TimeOfDay walkingTime;
 
   const CombinedSafetyScore({
     required this.crimeResult,
     required this.collisionResult,
     required this.osmResult,
     required this.routeDistanceKm,
+    required this.walkingTime,
   });
 
   /// Crime weighted density per km.
@@ -24,53 +26,68 @@ class CombinedSafetyScore {
       : 0;
 
   /// Collision weighted score per km.
-  /// Fatal = 5pts, Serious = 2pts.
   double get collisionDensity => routeDistanceKm > 0
       ? collisionResult.collisionScore / routeDistanceKm
       : 0;
 
+  /// Time of day multiplier for crime risk.
+  ///
+  /// Crime patterns by hour (based on Met Police data patterns):
+  /// - Daytime (09:00–17:00): baseline, multiplier = 1.0
+  /// - Morning (06:00–09:00): quieter, multiplier = 0.7
+  /// - Evening (17:00–20:00): moderate rise, multiplier = 1.2
+  /// - Night (20:00–23:00): significant rise, multiplier = 1.5
+  /// - Late night (23:00–03:00): highest risk, multiplier = 1.8
+  /// - Very late (03:00–06:00): quieter but isolated, multiplier = 1.4
+  double get timeMultiplier {
+    final hour = walkingTime.hour;
+
+    if (hour >= 6 && hour < 9) return 0.7;   // morning
+    if (hour >= 9 && hour < 17) return 1.0;  // daytime — baseline
+    if (hour >= 17 && hour < 20) return 1.2; // evening commute
+    if (hour >= 20 && hour < 23) return 1.5; // night
+    if (hour >= 23 || hour < 3) return 1.8;  // late night
+    return 1.4;                               // very late (03:00–06:00)
+  }
+
+  /// Human readable time period label.
+  String get timePeriodLabel {
+    final hour = walkingTime.hour;
+    if (hour >= 6 && hour < 9) return 'Morning';
+    if (hour >= 9 && hour < 17) return 'Daytime';
+    if (hour >= 17 && hour < 20) return 'Evening';
+    if (hour >= 20 && hour < 23) return 'Night';
+    if (hour >= 23 || hour < 3) return 'Late Night';
+    return 'Very Late';
+  }
+
   /// Power curve risk scoring.
-  ///
-  /// Formula: risk = 100 × density / (density + knee)
-  ///
-  /// Calibrated against known London routes:
-  /// - Richmond → Kew:       crime ~8/km   → 🟢 80
-  /// - Muswell Hill:         crime ~3/km   → 🟢 89
-  /// - Clapham Common:       crime ~15/km  → 🟡 63
-  /// - Hackney → London Fds: crime ~105/km → 🟠 34
-  /// - Brixton:              crime ~150/km → 🔴 27
-  /// - Shoreditch:           crime ~240/km → 🔴 22
-  /// - Camden:               crime ~358/km → 🔴 17
   static double _riskScore(double density, {required double knee}) {
     if (density <= 0) return 0;
     return (100 * density / (density + knee)).clamp(0.0, 100.0);
   }
 
-  /// Crime risk score (0–100, higher = more risky)
-  double get crimeRiskScore => _riskScore(crimeDensity, knee: 50);
+  /// Crime risk score — adjusted by time of day multiplier.
+  double get crimeRiskScore =>
+      (_riskScore(crimeDensity, knee: 50) * timeMultiplier).clamp(0.0, 100.0);
 
-  /// Collision risk score (0–100, higher = more risky)
+  /// Collision risk score — not affected by time of day.
   double get collisionRiskScore => _riskScore(collisionDensity, knee: 15);
 
-  /// OSM infrastructure risk score (0–100, higher = more risky)
-  /// Inverted from infrastructureScore since higher infra = safer
+  /// OSM infrastructure risk score.
   double get osmRiskScore =>
       (100 - osmResult.infrastructureScore).clamp(0.0, 100.0);
 
-  /// Combined risk score:
-  /// - Crime 60%       — pedestrian-specific, route-relevant
-  /// - Collision 25%   — road danger, all users
-  /// - OSM infra 15%   — pavement, lighting, speed limits
-  ///
-  /// OSM weight is lower because:
-  /// - Not all segments have full tag coverage
-  /// - Infrastructure is slower to change than crime patterns
+  /// Combined risk:
+  /// - Crime 60%
+  /// - Collision 25%
+  /// - OSM infra 15%
   double get combinedRiskScore =>
       (crimeRiskScore * 0.60) +
       (collisionRiskScore * 0.25) +
       (osmRiskScore * 0.15);
 
-  /// 0–100 safety score. 100 = safest, 0 = most dangerous.
+  /// 0–100 safety score.
   int get safetyScore =>
       (100 - combinedRiskScore).round().clamp(0, 100);
 
@@ -88,21 +105,17 @@ class CombinedSafetyScore {
     return Colors.red;
   }
 
-  /// Crime summary — avoids alarming language.
   String get crimeSummary =>
       '${crimeResult.totalCrimes} relevant crimes '
       '(${crimeResult.violentCrimes} high-concern incidents)';
 
-  /// Collision summary.
   String get collisionSummary =>
       '${collisionResult.totalCollisions} road collisions '
       '(${collisionResult.fatalCollisions} fatal, '
       '${collisionResult.seriousCollisions} serious)';
 
-  /// OSM infrastructure summary.
   String get osmSummary => osmResult.summary;
 
-  /// Date range label for crime data.
   String get crimePeriodLabel {
     final now = DateTime.now();
     final from = DateTime(now.year, now.month - 6);
@@ -114,9 +127,7 @@ class CombinedSafetyScore {
     return '${months[from.month]}–${months[to.month]} ${to.year}';
   }
 
-  /// Date range label for collision data.
   String get collisionPeriodLabel => '2022–2024';
 
-  /// OSM data is continuously updated by volunteers.
   String get osmPeriodLabel => 'live data';
 }

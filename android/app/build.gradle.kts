@@ -5,9 +5,10 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
-// ✅ Load local.properties safely
+// Load local.properties safely
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -35,9 +36,9 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // ✅ Inject API key into manifest
+        // Inject API key into manifest
         manifestPlaceholders["MAPS_API_KEY"] =
-    localProperties.getProperty("MAPS_DISPLAY_KEY") ?: ""
+            localProperties.getProperty("MAPS_DISPLAY_KEY") ?: ""
     }
 
     buildTypes {
@@ -49,4 +50,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:34.11.0"))
+    implementation("com.google.firebase:firebase-firestore")
 }

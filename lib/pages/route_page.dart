@@ -17,6 +17,7 @@ class RoutePage extends StatefulWidget {
   final LatLng originLatLng;
   final String destination;
   final LatLng destinationLatLng;
+  final TimeOfDay walkingTime;
 
   const RoutePage({
     super.key,
@@ -24,6 +25,7 @@ class RoutePage extends StatefulWidget {
     required this.originLatLng,
     required this.destination,
     required this.destinationLatLng,
+    required this.walkingTime,
   });
 
   @override
@@ -31,21 +33,22 @@ class RoutePage extends StatefulWidget {
 }
 
 class _RoutePageState extends State<RoutePage> {
-  GoogleMapController? mapController;
-  LatLng? currentPosition;
+  GoogleMapController? _mapController;
+  LatLng? _currentPosition;
   double _currentHeading = 0.0;
-  Set<Polyline> polylines = {};
-  Set<Marker> markers = {};
-  StreamSubscription<LatLng>? positionStream;
+  Set<Polyline> _polylines = {};
+  Set<Marker> _markers = {};
+  StreamSubscription<LatLng>? _positionStream;
   StreamSubscription<CompassEvent>? _compassStream;
-  Timer? timer;
-  int seconds = 0;
+  Timer? _timer;
+  int _seconds = 0;
 
   bool _mapReady = false;
   bool _locationReady = false;
   bool _headingUp = false;
   bool _tripStarted = false;
   bool _legendVisible = true;
+  bool _disposed = false; // guard against post-dispose setState
 
   List<LatLng> _fullRoute = [];
   double _totalRouteKm = 0;
@@ -55,32 +58,36 @@ class _RoutePageState extends State<RoutePage> {
   bool _safetyLoading = false;
   CombinedSafetyScore? _safetyScore;
 
-  static const LatLng defaultLocation = LatLng(51.5074, -0.1278);
   static const double _walkingSpeedKmh = 5.0;
 
   @override
   void initState() {
     super.initState();
-    _initLocation();
     _initMarkers();
+    _initLocation();
     _listenToCompass();
+  }
+
+  // ── Safe setState — no-ops after dispose ──────────────────
+  void _safeSetState(VoidCallback fn) {
+    if (!_disposed && mounted) setState(fn);
   }
 
   void _listenToCompass() {
     _compassStream = FlutterCompass.events?.listen((CompassEvent event) {
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
       if (event.heading != null) {
-        setState(() => _currentHeading = event.heading!);
-        if (_tripStarted && _headingUp && currentPosition != null) {
-          _updateCamera(currentPosition!);
+        _safeSetState(() => _currentHeading = event.heading!);
+        if (_tripStarted && _headingUp && _currentPosition != null) {
+          _updateCamera(_currentPosition!);
         }
       }
     });
   }
 
   void _initMarkers() {
-    setState(() {
-      markers = {
+    _safeSetState(() {
+      _markers = {
         Marker(
           markerId: const MarkerId('origin'),
           position: widget.originLatLng,
@@ -107,6 +114,8 @@ class _RoutePageState extends State<RoutePage> {
     required List<CrimePoint> crimePoints,
     required List<CollisionPoint> collisionPoints,
   }) {
+    if (_disposed || !mounted) return;
+
     final highConcernCrimes =
         crimePoints.where((c) => c.isViolent).toList();
 
@@ -120,13 +129,11 @@ class _RoutePageState extends State<RoutePage> {
     final crimeMarkers = grouped.entries.map((entry) {
       final crimes = entry.value;
       final count = crimes.length;
-
       final latestMonth = crimes
           .map((c) => c.month)
           .reduce((a, b) => a.compareTo(b) > 0 ? a : b);
       final latestLabel =
           crimes.firstWhere((c) => c.month == latestMonth).monthLabel;
-
       final title = count > 1
           ? '$count incidents at this location'
           : crimes.first.category;
@@ -164,8 +171,8 @@ class _RoutePageState extends State<RoutePage> {
       );
     }).toSet();
 
-    setState(() {
-      markers = {
+    _safeSetState(() {
+      _markers = {
         Marker(
           markerId: const MarkerId('origin'),
           position: widget.originLatLng,
@@ -191,24 +198,25 @@ class _RoutePageState extends State<RoutePage> {
   }
 
   void _startTrip() {
-    setState(() {
+    _safeSetState(() {
       _tripStarted = true;
       _headingUp = true;
     });
 
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => seconds++);
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_disposed || !mounted) return;
+      _safeSetState(() => _seconds++);
     });
 
-    if (currentPosition != null) _updateCamera(currentPosition!);
+    if (_currentPosition != null) _updateCamera(_currentPosition!);
   }
 
   Future<void> _initLocation() async {
     final position = await LocationService.getCurrentPosition();
-    if (!mounted || position == null) return;
+    if (_disposed || !mounted || position == null) return;
 
-    setState(() {
-      currentPosition = position;
+    _safeSetState(() {
+      _currentPosition = position;
       _locationReady = true;
     });
 
@@ -217,10 +225,11 @@ class _RoutePageState extends State<RoutePage> {
   }
 
   void _listenToLocation() {
-    positionStream = LocationService.positionStream().listen((position) {
-      if (!mounted) return;
-      setState(() {
-        currentPosition = position;
+    _positionStream =
+        LocationService.positionStream().listen((position) {
+      if (_disposed || !mounted) return;
+      _safeSetState(() {
+        _currentPosition = position;
         if (_tripStarted) _updateProgress(position);
       });
       if (_tripStarted) _updateCamera(position);
@@ -228,8 +237,8 @@ class _RoutePageState extends State<RoutePage> {
   }
 
   void _updateCamera(LatLng position) {
-    if (mapController == null) return;
-    mapController!.animateCamera(
+    if (_disposed || _mapController == null) return;
+    _mapController!.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
           target: position,
@@ -242,8 +251,8 @@ class _RoutePageState extends State<RoutePage> {
   }
 
   void _toggleHeadingUp() {
-    setState(() => _headingUp = !_headingUp);
-    if (currentPosition != null) _updateCamera(currentPosition!);
+    _safeSetState(() => _headingUp = !_headingUp);
+    if (_currentPosition != null) _updateCamera(_currentPosition!);
   }
 
   void _updateProgress(LatLng current) {
@@ -269,7 +278,7 @@ class _RoutePageState extends State<RoutePage> {
       remaining += _haversineKm(_fullRoute[i], _fullRoute[i + 1]);
     }
 
-    setState(() {
+    _safeSetState(() {
       _walkedKm = walked;
       _remainingKm = remaining;
     });
@@ -285,10 +294,10 @@ class _RoutePageState extends State<RoutePage> {
     List<LatLng> route,
     List<double> scores,
   ) {
+    if (_disposed || !mounted) return;
     if (route.length < 2 || scores.isEmpty) return;
 
     final coloured = <Polyline>{};
-
     for (int i = 0; i < route.length - 1; i++) {
       final score = i < scores.length ? scores[i] : 50.0;
       coloured.add(Polyline(
@@ -299,7 +308,7 @@ class _RoutePageState extends State<RoutePage> {
       ));
     }
 
-    setState(() => polylines = coloured);
+    _safeSetState(() => _polylines = coloured);
   }
 
   Future<void> _drawRoute() async {
@@ -308,15 +317,15 @@ class _RoutePageState extends State<RoutePage> {
       destination: widget.destinationLatLng,
     );
 
-    if (!mounted || route.isEmpty) return;
+    if (_disposed || !mounted || route.isEmpty) return;
 
     final totalKm = RouteService.calculateRouteDistanceKm(route);
 
-    setState(() {
+    _safeSetState(() {
       _fullRoute = route;
       _totalRouteKm = totalKm;
       _remainingKm = totalKm;
-      polylines = {
+      _polylines = {
         Polyline(
           polylineId: const PolylineId('route'),
           points: route,
@@ -326,17 +335,15 @@ class _RoutePageState extends State<RoutePage> {
       };
     });
 
+    if (_disposed || _mapController == null) return;
     final bounds = RouteService.boundsFromPoints(route);
-    mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, 50),
+    );
 
-    setState(() => _safetyLoading = true);
+    _safeSetState(() => _safetyLoading = true);
 
     final sampled = RouteService.sampleRoutePoints(route);
-    debugPrint(
-      'Route: ${route.length} points, '
-      '${sampled.length} sampled, '
-      '${totalKm.toStringAsFixed(2)} km',
-    );
 
     final results = await Future.wait([
       PoliceService.getCrimesAlongRoute(
@@ -348,11 +355,14 @@ class _RoutePageState extends State<RoutePage> {
       OsmService.getInfrastructureScore(route),
     ]);
 
+    // Guard again after all async work completes
+    if (_disposed || !mounted) return;
+
     final crimeResult = results[0] as CrimeResult;
     final collisionResult = results[1] as CollisionResult;
     final osmResult = results[2] as OsmResult;
 
-    if (mounted && osmResult.routePointScores.isNotEmpty) {
+    if (osmResult.routePointScores.isNotEmpty) {
       _buildColouredPolylines(route, osmResult.routePointScores);
     }
 
@@ -361,6 +371,7 @@ class _RoutePageState extends State<RoutePage> {
       collisionResult: collisionResult,
       osmResult: osmResult,
       routeDistanceKm: totalKm,
+      walkingTime: widget.walkingTime,
     );
 
     debugPrint(
@@ -368,19 +379,20 @@ class _RoutePageState extends State<RoutePage> {
       '(${combinedScore.safetyLabel}) — '
       'crime: ${combinedScore.crimeDensity.toStringAsFixed(2)}, '
       'collision: ${combinedScore.collisionDensity.toStringAsFixed(2)}, '
-      'osm infra: ${osmResult.infrastructureScore.toStringAsFixed(1)}',
+      'osm: ${osmResult.infrastructureScore.toStringAsFixed(1)}, '
+      'time: ×${combinedScore.timeMultiplier} '
+      '(${combinedScore.timePeriodLabel})',
     );
 
-    if (mounted) {
-      setState(() {
-        _safetyScore = combinedScore;
-        _safetyLoading = false;
-      });
-      _buildAllMarkers(
-        crimePoints: crimeResult.crimePoints,
-        collisionPoints: collisionResult.collisionPoints,
-      );
-    }
+    _safeSetState(() {
+      _safetyScore = combinedScore;
+      _safetyLoading = false;
+    });
+
+    _buildAllMarkers(
+      crimePoints: crimeResult.crimePoints,
+      collisionPoints: collisionResult.collisionPoints,
+    );
   }
 
   double _haversineKm(LatLng a, LatLng b) {
@@ -401,7 +413,9 @@ class _RoutePageState extends State<RoutePage> {
       (_remainingKm / _walkingSpeedKmh * 60).ceil();
 
   double get _progressFraction =>
-      _totalRouteKm > 0 ? (_walkedKm / _totalRouteKm).clamp(0.0, 1.0) : 0.0;
+      _totalRouteKm > 0
+          ? (_walkedKm / _totalRouteKm).clamp(0.0, 1.0)
+          : 0.0;
 
   String _formatDistance(double km) {
     if (km < 1.0) return '${(km * 1000).round()}m';
@@ -409,9 +423,9 @@ class _RoutePageState extends State<RoutePage> {
   }
 
   String _getFormattedTime() {
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600) ~/ 60;
-    final secs = (seconds % 60).toString().padLeft(2, '0');
+    final hours = _seconds ~/ 3600;
+    final minutes = (_seconds % 3600) ~/ 60;
+    final secs = (_seconds % 60).toString().padLeft(2, '0');
     if (hours > 0) {
       return '$hours:${minutes.toString().padLeft(2, '0')}:$secs';
     }
@@ -420,11 +434,21 @@ class _RoutePageState extends State<RoutePage> {
 
   @override
   void dispose() {
-    timer?.cancel();
-    positionStream?.cancel();
+    // Mark disposed FIRST — stops all callbacks immediately
+    _disposed = true;
+
+    // Cancel all streams and timers
+    _timer?.cancel();
+    _timer = null;
+    _positionStream?.cancel();
+    _positionStream = null;
     _compassStream?.cancel();
-    mapController?.dispose();
-    mapController = null;
+    _compassStream = null;
+
+    // Dispose map controller last
+    _mapController?.dispose();
+    _mapController = null;
+
     super.dispose();
   }
 
@@ -433,8 +457,24 @@ class _RoutePageState extends State<RoutePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_tripStarted ? 'SafeWalk Active' : 'Plan Your Route'),
+        bottom: !_tripStarted && _safetyScore != null
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(20),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${_safetyScore!.timePeriodLabel} · '
+                    '${widget.walkingTime.format(context)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
+              )
+            : null,
       ),
-      body: currentPosition == null
+      body: _currentPosition == null
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
@@ -449,21 +489,25 @@ class _RoutePageState extends State<RoutePage> {
                         ),
                         myLocationEnabled: true,
                         myLocationButtonEnabled: false,
-                        polylines: polylines,
-                        markers: markers,
+                        polylines: _polylines,
+                        markers: _markers,
                         onMapCreated: (controller) {
-                          mapController = controller;
-                          setState(() => _mapReady = true);
+                          if (_disposed) {
+                            controller.dispose();
+                            return;
+                          }
+                          _mapController = controller;
+                          _safeSetState(() => _mapReady = true);
                           _tryDrawRoute();
                         },
                       ),
 
-                      // ── SOS button — top right ──────────────
+                      // ── SOS button — bottom right ───────────
                       Positioned(
                         bottom: 12,
-  right: 12,
+                        right: 12,
                         child: SosButton(
-                          currentPosition: currentPosition,
+                          currentPosition: _currentPosition,
                         ),
                       ),
 
@@ -476,7 +520,7 @@ class _RoutePageState extends State<RoutePage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               GestureDetector(
-                                onTap: () => setState(
+                                onTap: () => _safeSetState(
                                   () => _legendVisible = !_legendVisible,
                                 ),
                                 child: Container(
@@ -485,7 +529,8 @@ class _RoutePageState extends State<RoutePage> {
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.92),
+                                    color:
+                                        Colors.white.withOpacity(0.92),
                                     borderRadius: BorderRadius.circular(6),
                                     boxShadow: const [
                                       BoxShadow(
@@ -522,7 +567,8 @@ class _RoutePageState extends State<RoutePage> {
                                     vertical: 8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.92),
+                                    color:
+                                        Colors.white.withOpacity(0.92),
                                     borderRadius: BorderRadius.circular(8),
                                     boxShadow: const [
                                       BoxShadow(
@@ -557,7 +603,8 @@ class _RoutePageState extends State<RoutePage> {
                                           label: 'Serious collision'),
                                       SizedBox(height: 6),
                                       Divider(
-                                          height: 1, color: Colors.black12),
+                                          height: 1,
+                                          color: Colors.black12),
                                       SizedBox(height: 6),
                                       _PathLegendItem(
                                           color: Colors.green,
@@ -638,7 +685,7 @@ class _RoutePageState extends State<RoutePage> {
                           const Divider(height: 1),
                           const SizedBox(height: 10),
 
-                          // ===== NAVIGATION PROGRESS (walking only) =====
+                          // ===== NAVIGATION PROGRESS =====
                           if (_tripStarted && _totalRouteKm > 0) ...[
                             Row(
                               mainAxisAlignment:
@@ -653,7 +700,8 @@ class _RoutePageState extends State<RoutePage> {
                                 _statBox(
                                   icon: Icons.schedule,
                                   label: 'Remaining',
-                                  value: '~$_estimatedMinutesRemaining min',
+                                  value:
+                                      '~$_estimatedMinutesRemaining min',
                                   color: Colors.orange,
                                 ),
                                 _statBox(
@@ -700,11 +748,11 @@ class _RoutePageState extends State<RoutePage> {
                                   child: LinearProgressIndicator(
                                     value: _progressFraction,
                                     minHeight: 6,
-                                    backgroundColor: Colors.grey.shade200,
-                                    valueColor:
-                                        const AlwaysStoppedAnimation<Color>(
-                                      Colors.blue,
-                                    ),
+                                    backgroundColor:
+                                        Colors.grey.shade200,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(
+  Colors.blue,
+),
                                   ),
                                 ),
                               ],
@@ -715,7 +763,7 @@ class _RoutePageState extends State<RoutePage> {
                             const SizedBox(height: 10),
                           ],
 
-                          // ===== PLANNING MODE — estimated info =====
+                          // ===== PLANNING MODE =====
                           if (!_tripStarted && _totalRouteKm > 0) ...[
                             Row(
                               mainAxisAlignment:
@@ -741,7 +789,7 @@ class _RoutePageState extends State<RoutePage> {
                             const SizedBox(height: 10),
                           ],
 
-                          // Safety badge (both modes)
+                          // Safety badge
                           SafetyBadge(
                             isLoading: _safetyLoading,
                             result: _safetyScore,
@@ -783,7 +831,8 @@ class _RoutePageState extends State<RoutePage> {
                                   ),
                                   label: Text(
                                     _headingUp ? 'Heading' : 'North',
-                                    style: const TextStyle(fontSize: 12),
+                                    style:
+                                        const TextStyle(fontSize: 12),
                                   ),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: _headingUp
@@ -803,9 +852,10 @@ class _RoutePageState extends State<RoutePage> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: OutlinedButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child:
-                                        const Text("I'm Safe - End Trip"),
+                                    onPressed: () =>
+                                        Navigator.pop(context),
+                                    child: const Text(
+                                        "I'm Safe - End Trip"),
                                   ),
                                 ),
                               ],
@@ -848,7 +898,7 @@ class _RoutePageState extends State<RoutePage> {
   }
 }
 
-/// Pin legend item — shows a location pin icon.
+/// Pin legend item.
 class _LegendItem extends StatelessWidget {
   final Color color;
   final String label;
@@ -868,7 +918,7 @@ class _LegendItem extends StatelessWidget {
   }
 }
 
-/// Path legend item — shows a coloured line instead of a pin.
+/// Path legend item — coloured line.
 class _PathLegendItem extends StatelessWidget {
   final Color color;
   final String label;

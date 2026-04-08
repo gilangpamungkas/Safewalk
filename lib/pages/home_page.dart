@@ -29,6 +29,10 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
   LatLng? selectedDestinationLatLng;
   final TextEditingController _destinationController = TextEditingController();
 
+  // Walking time — defaults to now, user can change
+  TimeOfDay _walkingTime = TimeOfDay.now();
+  bool _useCurrentTime = true;
+
   final List<String> quickSelect = [
     'Home',
     'Work',
@@ -101,6 +105,61 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
       selectedDestinationLatLng = latLng;
       _destinationController.text = label;
     });
+  }
+
+  /// Opens time picker so user can plan a future walk.
+  Future<void> _pickWalkingTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _walkingTime,
+      helpText: 'When are you planning to walk?',
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _walkingTime = picked;
+        _useCurrentTime = false;
+      });
+    }
+  }
+
+  /// Resets walking time back to now.
+  void _resetToNow() {
+    setState(() {
+      _walkingTime = TimeOfDay.now();
+      _useCurrentTime = true;
+    });
+  }
+
+  /// Returns emoji icon for the time period.
+  String _timePeriodIcon(TimeOfDay time) {
+    final h = time.hour;
+    if (h >= 6 && h < 9) return '🌅';
+    if (h >= 9 && h < 17) return '☀️';
+    if (h >= 17 && h < 20) return '🌆';
+    if (h >= 20 && h < 23) return '🌙';
+    if (h >= 23 || h < 3) return '🌃';
+    return '🌌';
+  }
+
+  /// Returns a risk hint for the selected time.
+  String _timeRiskHint(TimeOfDay time) {
+    final h = time.hour;
+    if (h >= 6 && h < 9) return 'Morning — generally safe';
+    if (h >= 9 && h < 17) return 'Daytime — safest period';
+    if (h >= 17 && h < 20) return 'Evening — moderate risk';
+    if (h >= 20 && h < 23) return 'Night — higher risk';
+    if (h >= 23 || h < 3) return 'Late night — highest risk';
+    return 'Very late — isolated roads';
+  }
+
+  Color _timeRiskColor(TimeOfDay time) {
+    final h = time.hour;
+    if (h >= 6 && h < 9) return Colors.green;
+    if (h >= 9 && h < 17) return Colors.green;
+    if (h >= 17 && h < 20) return Colors.amber;
+    if (h >= 20 && h < 23) return Colors.orange;
+    if (h >= 23 || h < 3) return Colors.red;
+    return Colors.orange;
   }
 
   /// Picks a contact from the phone's contact book.
@@ -187,7 +246,6 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Your name ──────────────────────────────
                 const Text(
                   'Your name',
                   style: TextStyle(
@@ -212,12 +270,9 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                   'knows who sent it.',
                   style: TextStyle(fontSize: 11, color: Colors.black38),
                 ),
-
                 const SizedBox(height: 16),
                 const Divider(height: 1, color: Colors.black12),
                 const SizedBox(height: 16),
-
-                // ── Emergency contact ───────────────────────
                 const Text(
                   'Emergency contact',
                   style: TextStyle(
@@ -270,10 +325,7 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                     label: const Text('Choose from contacts'),
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
-                // SMS preview
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -490,7 +542,89 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                   }).toList(),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: Colors.black12),
+                const SizedBox(height: 12),
+
+                // ===== WALKING TIME =====
+                Row(
+                  children: [
+                    const Icon(Icons.schedule, size: 16, color: Colors.black54),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Walking time',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const Spacer(),
+                    // Reset to now button — only shown if custom time set
+                    if (!_useCurrentTime)
+                      TextButton(
+                        onPressed: _resetToNow,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: const Text('Reset to now'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Time selector row
+                GestureDetector(
+                  onTap: _pickWalkingTime,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.black26),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          _timePeriodIcon(_walkingTime),
+                          style: const TextStyle(fontSize: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _useCurrentTime
+                                  ? 'Now — ${_walkingTime.format(context)}'
+                                  : _walkingTime.format(context),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                            Text(
+                              _timeRiskHint(_walkingTime),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _timeRiskColor(_walkingTime),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        const Icon(
+                          Icons.edit,
+                          size: 16,
+                          color: Colors.black38,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: Colors.black12),
+                const SizedBox(height: 16),
 
                 // ===== START WALKING BUTTON =====
                 SizedBox(
@@ -506,6 +640,7 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                                   destination: selectedDestination,
                                   destinationLatLng:
                                       selectedDestinationLatLng!,
+                                  walkingTime: _walkingTime,
                                 ),
                               ),
                             )
