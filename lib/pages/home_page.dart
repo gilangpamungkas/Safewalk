@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_places_api_flutter/google_places_api_flutter.dart';
 // ignore: implementation_imports
 import 'package:google_places_api_flutter/src/domain/google_api/place_details_model.dart';
 import '../services/route_service.dart';
 import '../services/location_service.dart';
+import '../services/sos_service.dart';
 import 'route_page.dart';
 
 class SafeWalkHomePage extends StatefulWidget {
@@ -42,19 +44,18 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
     _detectCurrentLocation();
   }
 
-  /// Detects current location and sets it as the default origin.
   Future<void> _detectCurrentLocation() async {
     setState(() => _isLoadingOrigin = true);
-
     final latLng = await LocationService.getCurrentPosition();
-
     if (!mounted) return;
 
     if (latLng != null) {
+      final address = await LocationService.reverseGeocode(latLng);
+      if (!mounted) return;
       setState(() {
         selectedOriginLatLng = latLng;
-        selectedOrigin = 'Current Location';
-        _originController.text = 'Current Location';
+        selectedOrigin = address;
+        _originController.text = address;
         _isLoadingOrigin = false;
       });
     } else {
@@ -67,53 +68,295 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
 
   void _onOriginSelected(Prediction prediction, PlaceDetailsModel? details) {
     if (!mounted) return;
-
     final lat = details?.result.geometry?.location.lat;
     final lng = details?.result.geometry?.location.lng;
-
-    if (lat == null || lng == null) {
-      debugPrint('Origin selected but lat/lng missing: ${prediction.description}');
-      return;
-    }
-
+    if (lat == null || lng == null) return;
     setState(() {
       selectedOrigin = prediction.description;
       selectedOriginLatLng = LatLng(lat, lng);
       _originController.text = selectedOrigin;
     });
-
     FocusScope.of(context).unfocus();
   }
 
-  void _onDestinationSelected(Prediction prediction, PlaceDetailsModel? details) {
+  void _onDestinationSelected(
+      Prediction prediction, PlaceDetailsModel? details) {
     if (!mounted) return;
-
     final lat = details?.result.geometry?.location.lat;
     final lng = details?.result.geometry?.location.lng;
-
-    if (lat == null || lng == null) {
-      debugPrint('Destination selected but lat/lng missing: ${prediction.description}');
-      return;
-    }
-
+    if (lat == null || lng == null) return;
     setState(() {
       selectedDestination = prediction.description;
       selectedDestinationLatLng = LatLng(lat, lng);
       _destinationController.text = selectedDestination;
     });
-
     FocusScope.of(context).unfocus();
   }
 
   Future<void> _geocodeQuickSelect(String label) async {
     final latLng = await RouteService.geocodeLabel(label);
     if (!mounted || latLng == null) return;
-
     setState(() {
       selectedDestination = label;
       selectedDestinationLatLng = latLng;
       _destinationController.text = label;
     });
+  }
+
+  /// Picks a contact from the phone's contact book.
+  Future<Map<String, String>?> _pickContact() async {
+    try {
+      final granted =
+          await FlutterContacts.requestPermission(readonly: true);
+      if (!granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Contacts permission denied'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return null;
+      }
+
+      final contact = await FlutterContacts.openExternalPick();
+      if (contact == null) return null;
+
+      final full = await FlutterContacts.getContact(
+        contact.id,
+        withProperties: true,
+      );
+
+      if (full == null || full.phones.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Selected contact has no phone number'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return null;
+      }
+
+      return {
+        'name': full.displayName,
+        'phone': full.phones.first.number,
+      };
+    } catch (e) {
+      debugPrint('Contact picker error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open contacts: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
+  /// Shows emergency contact settings dialog.
+  void _showContactSettings() async {
+    final contact = await SosService.loadContact();
+    final savedUserName = await SosService.loadUserName();
+    if (!mounted) return;
+
+    final userNameController =
+        TextEditingController(text: savedUserName ?? '');
+    final contactNameController =
+        TextEditingController(text: contact['name'] ?? '');
+    final phoneController =
+        TextEditingController(text: contact['phone'] ?? '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.emergency, color: Colors.red, size: 20),
+              SizedBox(width: 8),
+              Text('SOS Settings'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Your name ──────────────────────────────
+                const Text(
+                  'Your name',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: userNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Your name',
+                    hintText: 'e.g. Sarah',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.badge),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Used in the SOS message so the recipient '
+                  'knows who sent it.',
+                  style: TextStyle(fontSize: 11, color: Colors.black38),
+                ),
+
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: Colors.black12),
+                const SizedBox(height: 16),
+
+                // ── Emergency contact ───────────────────────
+                const Text(
+                  'Emergency contact',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'This person receives your location via SMS '
+                  'when you use the SOS button.',
+                  style: TextStyle(fontSize: 11, color: Colors.black38),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: contactNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Contact name',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone number',
+                    hintText: '+44 7700 900000',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.phone),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      FocusScope.of(ctx).unfocus();
+                      final picked = await _pickContact();
+                      if (picked != null) {
+                        setDialogState(() {
+                          contactNameController.text = picked['name']!;
+                          phoneController.text = picked['phone']!;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.contacts, size: 18),
+                    label: const Text('Choose from contacts'),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // SMS preview
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'SMS preview',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black45,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '🚨 SOS Alert from '
+                        '${userNameController.text.isEmpty ? '[Your name]' : userNameController.text}'
+                        '!\n\n'
+                        'I need help. This is my last known location:\n'
+                        'https://maps.google.com/?q=...\n\n'
+                        'Sent via SafeWalk at ${TimeOfDay.now().format(ctx)}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final userName = userNameController.text.trim();
+                final contactName = contactNameController.text.trim();
+                final phone = phoneController.text.trim();
+
+                if (contactName.isEmpty || phone.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Please enter emergency contact name and phone',
+                      ),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+
+                await SosService.saveUserName(userName);
+                await SosService.saveContact(
+                  name: contactName,
+                  phone: phone,
+                );
+
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('SOS settings saved'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   bool get _canStart =>
@@ -134,8 +377,15 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
       appBar: AppBar(
         title: const Text('SafeWalk'),
         actions: [
-          IconButton(icon: const Icon(Icons.history), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.menu), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () {},
+          ),
+          IconButton(
+            icon: const Icon(Icons.emergency),
+            tooltip: 'SOS Settings',
+            onPressed: _showContactSettings,
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -153,7 +403,8 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                 const SizedBox(height: 16),
                 const Text(
                   'Start Your SafeWalk',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 24),
 
@@ -167,7 +418,6 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const Spacer(),
-                    // Re-detect current location button
                     if (!_isLoadingOrigin)
                       TextButton.icon(
                         onPressed: _detectCurrentLocation,
@@ -199,10 +449,7 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                 ),
 
                 const SizedBox(height: 8),
-
-                // Arrow connecting origin to destination
                 const Icon(Icons.arrow_downward, color: Colors.grey),
-
                 const SizedBox(height: 8),
 
                 // ===== DESTINATION FIELD =====
@@ -257,13 +504,44 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                                   origin: selectedOrigin,
                                   originLatLng: selectedOriginLatLng!,
                                   destination: selectedDestination,
-                                  destinationLatLng: selectedDestinationLatLng!,
+                                  destinationLatLng:
+                                      selectedDestinationLatLng!,
                                 ),
                               ),
                             )
                         : null,
                     child: const Text('Start Walking'),
                   ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ===== SOS HINT =====
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.sos, size: 14, color: Colors.red),
+                    const SizedBox(width: 4),
+                    Text(
+                      'SOS button available during your walk',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: _showContactSettings,
+                      child: Text(
+                        '· Set up SOS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue.shade600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

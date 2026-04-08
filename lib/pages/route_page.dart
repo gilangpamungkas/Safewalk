@@ -10,6 +10,7 @@ import '../services/road_safety_service.dart';
 import '../services/osm_service.dart';
 import '../services/combined_safety_score.dart';
 import '../widgets/safety_badge.dart';
+import '../widgets/sos_button.dart';
 
 class RoutePage extends StatefulWidget {
   final String origin;
@@ -44,7 +45,7 @@ class _RoutePageState extends State<RoutePage> {
   bool _locationReady = false;
   bool _headingUp = false;
   bool _tripStarted = false;
-  bool _legendVisible = true; // toggle legend visibility
+  bool _legendVisible = true;
 
   List<LatLng> _fullRoute = [];
   double _totalRouteKm = 0;
@@ -457,6 +458,15 @@ class _RoutePageState extends State<RoutePage> {
                         },
                       ),
 
+                      // ── SOS button — top right ──────────────
+                      Positioned(
+                        bottom: 12,
+  right: 12,
+                        child: SosButton(
+                          currentPosition: currentPosition,
+                        ),
+                      ),
+
                       // ── Floating legend — bottom left ───────
                       if (_safetyScore != null)
                         Positioned(
@@ -465,7 +475,6 @@ class _RoutePageState extends State<RoutePage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Toggle button
                               GestureDetector(
                                 onTap: () => setState(
                                   () => _legendVisible = !_legendVisible,
@@ -505,8 +514,6 @@ class _RoutePageState extends State<RoutePage> {
                                   ),
                                 ),
                               ),
-
-                              // Legend panel
                               if (_legendVisible) ...[
                                 const SizedBox(height: 4),
                                 Container(
@@ -529,57 +536,44 @@ class _RoutePageState extends State<RoutePage> {
                                         CrossAxisAlignment.start,
                                     mainAxisSize: MainAxisSize.min,
                                     children: const [
-                                      // Pins
                                       _LegendItem(
-                                        color: Colors.blue,
-                                        label: 'Origin',
-                                      ),
+                                          color: Colors.blue,
+                                          label: 'Origin'),
                                       SizedBox(height: 3),
                                       _LegendItem(
-                                        color: Colors.green,
-                                        label: 'Destination',
-                                      ),
+                                          color: Colors.green,
+                                          label: 'Destination'),
                                       SizedBox(height: 3),
                                       _LegendItem(
-                                        color: Colors.red,
-                                        label: 'High-concern incident',
-                                      ),
+                                          color: Colors.red,
+                                          label: 'High-concern incident'),
                                       SizedBox(height: 3),
                                       _LegendItem(
-                                        color: Colors.deepPurple,
-                                        label: 'Fatal collision',
-                                      ),
+                                          color: Colors.deepPurple,
+                                          label: 'Fatal collision'),
                                       SizedBox(height: 3),
                                       _LegendItem(
-                                        color: Colors.orange,
-                                        label: 'Serious collision',
-                                      ),
+                                          color: Colors.orange,
+                                          label: 'Serious collision'),
                                       SizedBox(height: 6),
                                       Divider(
-                                        height: 1,
-                                        color: Colors.black12,
-                                      ),
+                                          height: 1, color: Colors.black12),
                                       SizedBox(height: 6),
-                                      // Path colours
                                       _PathLegendItem(
-                                        color: Colors.green,
-                                        label: 'Good path',
-                                      ),
+                                          color: Colors.green,
+                                          label: 'Good path'),
                                       SizedBox(height: 3),
                                       _PathLegendItem(
-                                        color: Colors.amber,
-                                        label: 'Moderate path',
-                                      ),
+                                          color: Colors.amber,
+                                          label: 'Moderate path'),
                                       SizedBox(height: 3),
                                       _PathLegendItem(
-                                        color: Colors.orange,
-                                        label: 'Poor path',
-                                      ),
+                                          color: Colors.orange,
+                                          label: 'Poor path'),
                                       SizedBox(height: 3),
                                       _PathLegendItem(
-                                        color: Colors.red,
-                                        label: 'Dangerous path',
-                                      ),
+                                          color: Colors.red,
+                                          label: 'Dangerous path'),
                                     ],
                                   ),
                                 ),
