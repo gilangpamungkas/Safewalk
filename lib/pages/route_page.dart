@@ -20,6 +20,7 @@ class RoutePage extends StatefulWidget {
   final String destination;
   final LatLng destinationLatLng;
   final TimeOfDay walkingTime;
+  final List<LatLng>? preloadedRoute;
 
   const RoutePage({
     super.key,
@@ -28,6 +29,7 @@ class RoutePage extends StatefulWidget {
     required this.destination,
     required this.destinationLatLng,
     required this.walkingTime,
+    this.preloadedRoute,
   });
 
   @override
@@ -363,10 +365,11 @@ class _RoutePageState extends State<RoutePage> {
   }
 
   Future<void> _drawRoute() async {
-    final route = await RouteService.getWalkingRoute(
-      origin: widget.originLatLng,
-      destination: widget.destinationLatLng,
-    );
+    final route = widget.preloadedRoute ??
+        await RouteService.getWalkingRoute(
+          origin: widget.originLatLng,
+          destination: widget.destinationLatLng,
+        );
 
     if (_disposed || !mounted || route.isEmpty) return;
 

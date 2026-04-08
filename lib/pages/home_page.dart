@@ -8,7 +8,12 @@ import 'package:google_places_api_flutter/src/domain/google_api/place_details_mo
 import '../services/route_service.dart';
 import '../services/location_service.dart';
 import '../services/sos_service.dart';
+import '../services/police_service.dart';
+import '../services/road_safety_service.dart';
+import '../services/osm_service.dart';
+import '../services/combined_safety_score.dart';
 import 'route_page.dart';
+import 'route_picker_page.dart';
 
 class SafeWalkHomePage extends StatefulWidget {
   const SafeWalkHomePage({super.key});
@@ -29,17 +34,18 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
   LatLng? selectedDestinationLatLng;
   final TextEditingController _destinationController = TextEditingController();
 
-  // Walking time — defaults to now, user can change
+  // Walking time
   TimeOfDay _walkingTime = TimeOfDay.now();
   bool _useCurrentTime = true;
 
+  // Route alternatives
+  List<RouteAlternative> _alternatives = [];
+  List<CombinedSafetyScore?> _alternativeScores = [];
+  bool _loadingRoutes = false;
+  int _selectedRouteIndex = 0;
+
   final List<String> quickSelect = [
-    'Home',
-    'Work',
-    'Gym',
-    "Friend's Place",
-    'Station',
-    'Market',
+    'Home', 'Work', 'Gym', "Friend's Place", 'Station', 'Market',
   ];
 
   @override
@@ -79,6 +85,8 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
       selectedOrigin = prediction.description;
       selectedOriginLatLng = LatLng(lat, lng);
       _originController.text = selectedOrigin;
+      _alternatives = [];
+      _alternativeScores = [];
     });
     FocusScope.of(context).unfocus();
   }
@@ -93,6 +101,8 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
       selectedDestination = prediction.description;
       selectedDestinationLatLng = LatLng(lat, lng);
       _destinationController.text = selectedDestination;
+      _alternatives = [];
+      _alternativeScores = [];
     });
     FocusScope.of(context).unfocus();
   }
@@ -104,10 +114,11 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
       selectedDestination = label;
       selectedDestinationLatLng = latLng;
       _destinationController.text = label;
+      _alternatives = [];
+      _alternativeScores = [];
     });
   }
 
-  /// Opens time picker so user can plan a future walk.
   Future<void> _pickWalkingTime() async {
     final picked = await showTimePicker(
       context: context,
@@ -118,19 +129,21 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
       setState(() {
         _walkingTime = picked;
         _useCurrentTime = false;
+        _alternatives = [];
+        _alternativeScores = [];
       });
     }
   }
 
-  /// Resets walking time back to now.
   void _resetToNow() {
     setState(() {
       _walkingTime = TimeOfDay.now();
       _useCurrentTime = true;
+      _alternatives = [];
+      _alternativeScores = [];
     });
   }
 
-  /// Returns emoji icon for the time period.
   String _timePeriodIcon(TimeOfDay time) {
     final h = time.hour;
     if (h >= 6 && h < 9) return '🌅';
@@ -141,7 +154,6 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
     return '🌌';
   }
 
-  /// Returns a risk hint for the selected time.
   String _timeRiskHint(TimeOfDay time) {
     final h = time.hour;
     if (h >= 6 && h < 9) return 'Morning — generally safe';
@@ -162,7 +174,296 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
     return Colors.orange;
   }
 
-  /// Picks a contact from the phone's contact book.
+  /// Fetches route alternatives and scores each one.
+  Future<void> _findRoutes() async {
+    if (!_canStart) return;
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _loadingRoutes = true;
+      _alternatives = [];
+      _alternativeScores = [];
+      _selectedRouteIndex = 0;
+    });
+
+    try {
+      final alternatives =
+          await RouteService.getWalkingRouteAlternatives(
+        origin: selectedOriginLatLng!,
+        destination: selectedDestinationLatLng!,
+      );
+
+      if (!mounted) return;
+
+      if (alternatives.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No routes found. Try a different destination.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        setState(() => _loadingRoutes = false);
+        return;
+      }
+
+      setState(() {
+        _alternatives = alternatives;
+        _alternativeScores = List.filled(alternatives.length, null);
+      });
+
+      // Score each route in parallel
+      final scoreFutures = alternatives.map((alt) async {
+        try {
+          final sampled = RouteService.sampleRoutePoints(alt.points);
+          final results = await Future.wait([
+            PoliceService.getCrimesAlongRoute(
+              sampled,
+              fullRoute: alt.points,
+              routeDistanceKm: alt.distanceKm,
+            ),
+            RoadSafetyService.getCollisionsAlongRoute(alt.points),
+            OsmService.getInfrastructureScore(alt.points),
+          ]);
+
+          return CombinedSafetyScore(
+            crimeResult: results[0] as CrimeResult,
+            collisionResult: results[1] as CollisionResult,
+            osmResult: results[2] as OsmResult,
+            routeDistanceKm: alt.distanceKm,
+            walkingTime: _walkingTime,
+          );
+        } catch (e) {
+          debugPrint('Score error for route ${alt.index}: $e');
+          return null;
+        }
+      }).toList();
+
+      final scores = await Future.wait(scoreFutures);
+      if (!mounted) return;
+
+      // Auto-select safest route
+      int safestIndex = 0;
+      int highestScore = -1;
+      for (int i = 0; i < scores.length; i++) {
+        final s = scores[i]?.safetyScore ?? 0;
+        if (s > highestScore) {
+          highestScore = s;
+          safestIndex = i;
+        }
+      }
+
+      setState(() {
+        _alternativeScores = scores;
+        _selectedRouteIndex = safestIndex;
+        _loadingRoutes = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingRoutes = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error finding routes: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Builds a route card for one alternative.
+  Widget _buildRouteCard(int index) {
+    final alt = _alternatives[index];
+    final score = _alternativeScores[index];
+    final isSelected = _selectedRouteIndex == index;
+
+    // Determine route label
+    String routeLabel;
+    if (_alternatives.length == 1) {
+      routeLabel = 'Recommended route';
+    } else if (index == 0) {
+      routeLabel = 'Fastest';
+    } else if (index == _alternatives.length - 1) {
+      routeLabel = 'Longest';
+    } else {
+      routeLabel = 'Alternative ${index}';
+    }
+
+    // Safest badge
+    bool isSafest = false;
+    if (_alternativeScores.every((s) => s != null)) {
+      final maxScore = _alternativeScores
+          .map((s) => s!.safetyScore)
+          .reduce((a, b) => a > b ? a : b);
+      isSafest = score?.safetyScore == maxScore;
+    }
+
+    return GestureDetector(
+      onTap: () => setState(() => _selectedRouteIndex = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? Colors.blue.shade50
+              : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? Colors.blue : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Route number circle
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.blue : Colors.grey.shade300,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : Colors.black54,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            // Route details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        routeLabel,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: isSelected
+                              ? Colors.blue.shade700
+                              : Colors.black87,
+                        ),
+                      ),
+                      if (isSafest) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Safest',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'via ${alt.summary}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.black45,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.straighten,
+                          size: 12, color: Colors.grey.shade500),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${alt.distanceKm.toStringAsFixed(1)} km',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Icon(Icons.schedule,
+                          size: 12, color: Colors.grey.shade500),
+                      const SizedBox(width: 3),
+                      Text(
+                        '~${alt.durationMinutes} min',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 8),
+
+            // Safety score
+            if (score != null)
+              Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: score.safetyColor,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${score.safetyScore}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    score.safetyLabel.replaceAll(
+                      RegExp(r'[🟢🟡🟠🔴]\s*'), ''),
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: score.safetyColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              )
+            else
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<Map<String, String>?> _pickContact() async {
     try {
       final granted =
@@ -217,7 +518,6 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
     }
   }
 
-  /// Shows emergency contact settings dialog.
   void _showContactSettings() async {
     final contact = await SosService.loadContact();
     final savedUserName = await SosService.loadUserName();
@@ -414,6 +714,8 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
   bool get _canStart =>
       selectedOriginLatLng != null && selectedDestinationLatLng != null;
 
+  bool get _hasRoutes => _alternatives.isNotEmpty;
+
   @override
   void dispose() {
     _originController.dispose();
@@ -460,15 +762,13 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                 ),
                 const SizedBox(height: 24),
 
-                // ===== ORIGIN FIELD =====
+                // ===== ORIGIN =====
                 Row(
                   children: [
                     const Icon(Icons.my_location, color: Colors.blue),
                     const SizedBox(width: 8),
-                    const Text(
-                      'From',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    const Text('From',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
                     const Spacer(),
                     if (!_isLoadingOrigin)
                       TextButton.icon(
@@ -504,15 +804,13 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                 const Icon(Icons.arrow_downward, color: Colors.grey),
                 const SizedBox(height: 8),
 
-                // ===== DESTINATION FIELD =====
+                // ===== DESTINATION =====
                 Row(
                   children: const [
                     Icon(Icons.location_on, color: Colors.red),
                     SizedBox(width: 8),
-                    Text(
-                      'To',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    Text('To',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -529,7 +827,7 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
 
                 const SizedBox(height: 16),
 
-                // ===== QUICK SELECT CHIPS =====
+                // ===== QUICK SELECT =====
                 Wrap(
                   spacing: 8,
                   children: quickSelect.map((item) {
@@ -549,14 +847,12 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                 // ===== WALKING TIME =====
                 Row(
                   children: [
-                    const Icon(Icons.schedule, size: 16, color: Colors.black54),
+                    const Icon(Icons.schedule,
+                        size: 16, color: Colors.black54),
                     const SizedBox(width: 8),
-                    const Text(
-                      'Walking time',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    const Text('Walking time',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
                     const Spacer(),
-                    // Reset to now button — only shown if custom time set
                     if (!_useCurrentTime)
                       TextButton(
                         onPressed: _resetToNow,
@@ -569,8 +865,6 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                   ],
                 ),
                 const SizedBox(height: 8),
-
-                // Time selector row
                 GestureDetector(
                   onTap: _pickWalkingTime,
                   child: Container(
@@ -612,11 +906,8 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                           ],
                         ),
                         const Spacer(),
-                        const Icon(
-                          Icons.edit,
-                          size: 16,
-                          color: Colors.black38,
-                        ),
+                        const Icon(Icons.edit,
+                            size: 16, color: Colors.black38),
                       ],
                     ),
                   ),
@@ -626,28 +917,119 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
                 const Divider(height: 1, color: Colors.black12),
                 const SizedBox(height: 16),
 
-                // ===== START WALKING BUTTON =====
+                // ===== FIND ROUTES BUTTON =====
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _canStart
-                        ? () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => RoutePage(
-                                  origin: selectedOrigin,
-                                  originLatLng: selectedOriginLatLng!,
-                                  destination: selectedDestination,
-                                  destinationLatLng:
-                                      selectedDestinationLatLng!,
-                                  walkingTime: _walkingTime,
-                                ),
-                              ),
-                            )
-                        : null,
-                    child: const Text('Start Walking'),
+                  child: ElevatedButton.icon(
+                    onPressed:
+                        _canStart && !_loadingRoutes ? _findRoutes : null,
+                    icon: _loadingRoutes
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.search),
+                    label: Text(
+                      _loadingRoutes ? 'Finding safest routes...' : 'Find Routes',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
+
+                // ===== ROUTE ALTERNATIVES =====
+                if (_hasRoutes) ...[
+                  const SizedBox(height: 20),
+                  const Divider(height: 1, color: Colors.black12),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Icon(Icons.alt_route,
+                          size: 16, color: Colors.black54),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_alternatives.length} route${_alternatives.length > 1 ? 's' : ''} found — tap to select',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Route cards
+                  ...List.generate(
+                    _alternatives.length,
+                    (i) => _buildRouteCard(i),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Walk selected route button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final selected = _alternatives[_selectedRouteIndex];
+                        final pickedIndex = await Navigator.push<int>(
+  context,
+  MaterialPageRoute(
+    builder: (_) => RoutePickerPage(
+      origin: selectedOrigin,
+      originLatLng: selectedOriginLatLng!,
+      destination: selectedDestination,
+      destinationLatLng: selectedDestinationLatLng!,
+      walkingTime: _walkingTime,
+      alternatives: _alternatives,
+      scores: _alternativeScores,
+    ),
+  ),
+);
+
+if (pickedIndex != null && context.mounted) {
+  final picked = _alternatives[pickedIndex];
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => RoutePage(
+        origin: selectedOrigin,
+        originLatLng: selectedOriginLatLng!,
+        destination: selectedDestination,
+        destinationLatLng: selectedDestinationLatLng!,
+        walkingTime: _walkingTime,
+        preloadedRoute: picked.points,
+      ),
+    ),
+  );
+}
+                      },
+                      icon: const Icon(Icons.directions_walk),
+                      label: const Text('Walk This Route'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
 
                 const SizedBox(height: 12),
 
