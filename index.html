@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeWalk — Walk Smarter. Stay Safer.</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue-deep:  #0D2B6E;
+    --blue-mid:   #1565C0;
+    --blue-bright:#1E88E5;
+    --blue-light: #42A5F5;
+    --blue-pale:  #E3F2FD;
+    --white:      #ffffff;
+    --gray-100:   #F5F7FA;
+    --gray-400:   #9098A8;
+    --gray-700:   #3D4455;
+    --green:      #2E7D32;
+    --orange:     #E65100;
+    --red:        #B71C1C;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--gray-700);
+    background: var(--white);
+    overflow-x: hidden;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 5%;
+    height: 64px;
+    background: rgba(13,43,110,0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .nav-brand {
+    display: flex; align-items: center; gap: 10px;
+    color: white; font-weight: 800; font-size: 1.2rem; text-decoration: none;
+    letter-spacing: -0.02em;
+  }
+  .nav-brand .shield { font-size: 1.4rem; }
+  .nav-links { display: flex; gap: 32px; }
+  .nav-links a {
+    color: rgba(255,255,255,0.8); text-decoration: none;
+    font-size: 0.875rem; font-weight: 500;
+    transition: color 0.2s;
+  }
+  .nav-links a:hover { color: white; }
+  .nav-cta {
+    background: white; color: var(--blue-mid);
+    padding: 8px 20px; border-radius: 24px;
+    font-weight: 700; font-size: 0.875rem; text-decoration: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+
+  /* ── HERO ── */
+  .hero {
+    min-height: 100vh;
+    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 50%, var(--blue-light) 100%);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding: 120px 5% 80px;
+    position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 70% 40%, rgba(255,255,255,0.08) 0%, transparent 60%),
+                radial-gradient(ellipse at 20% 80%, rgba(255,255,255,0.05) 0%, transparent 50%);
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+    color: white; padding: 6px 16px; border-radius: 24px;
+    font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; margin-bottom: 28px;
+    backdrop-filter: blur(8px);
+  }
+  .hero-icon {
+    width: 100px; height: 100px; border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    border: 2px solid rgba(255,255,255,0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3rem; margin: 0 auto 32px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    overflow: hidden;
+  }
+  .hero-icon img {
+    width: 100%; height: 100%;
+    object-fit: cover; display: block;
+  }
+  .hero h1 {
+    font-size: clamp(2.8rem, 7vw, 5rem);
+    font-weight: 900; color: white;
+    line-height: 1.05; letter-spacing: -0.03em;
+    margin-bottom: 20px;
+  }
+  .hero h1 span { color: var(--blue-pale); }
+  .hero p {
+    font-size: clamp(1rem, 2.5vw, 1.25rem);
+    color: rgba(255,255,255,0.82);
+    max-width: 600px; line-height: 1.7;
+    font-weight: 300; margin-bottom: 44px;
+  }
+  .hero-ctas { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: white; color: var(--blue-mid);
+    padding: 14px 28px; border-radius: 32px;
+    font-weight: 700; font-size: 1rem; text-decoration: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.25); }
+  .btn-secondary {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.15); color: white;
+    border: 1.5px solid rgba(255,255,255,0.4);
+    padding: 14px 28px; border-radius: 32px;
+    font-weight: 600; font-size: 1rem; text-decoration: none;
+    backdrop-filter: blur(8px);
+    transition: background 0.2s, transform 0.2s;
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.25); transform: translateY(-2px); }
+  .hero-scroll {
+    position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 0.75rem; font-weight: 500;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    animation: bounce 2s ease-in-out infinite;
+  }
+  @keyframes bounce { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(6px)} }
+
+  /* ── PROBLEM ── */
+  .section { padding: 96px 5%; }
+  .section-label {
+    font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--blue-bright);
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
+    font-weight: 800; color: var(--blue-deep);
+    line-height: 1.15; letter-spacing: -0.02em;
+    margin-bottom: 20px;
+  }
+  .section-sub {
+    font-size: 1.05rem; color: var(--gray-400);
+    max-width: 560px; line-height: 1.7; font-weight: 300;
+  }
+  .problem-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
+    gap: 24px; margin-top: 56px;
+  }
+  .problem-card {
+    background: var(--gray-100); border-radius: 16px;
+    padding: 32px; border-left: 4px solid var(--blue-bright);
+  }
+  .problem-card .stat {
+    font-size: 2.4rem; font-weight: 900; color: var(--blue-mid);
+    line-height: 1; margin-bottom: 8px;
+  }
+  .problem-card h3 { font-size: 1rem; font-weight: 700; color: var(--blue-deep); margin-bottom: 8px; }
+  .problem-card p  { font-size: 0.9rem; color: var(--gray-400); line-height: 1.6; }
+
+  /* ── HOW IT WORKS ── */
+  .how-bg { background: var(--gray-100); }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 0; margin-top: 56px; }
+  .step {
+    padding: 32px 28px; position: relative;
+    border-right: 1px solid rgba(0,0,0,0.06);
+  }
+  .step:last-child { border-right: none; }
+  .step-num {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--blue-mid), var(--blue-bright));
+    color: white; font-weight: 800; font-size: 0.9rem;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 20px; box-shadow: 0 4px 12px rgba(21,101,192,0.3);
+  }
+  .step h3 { font-size: 1rem; font-weight: 700; color: var(--blue-deep); margin-bottom: 8px; }
+  .step p  { font-size: 0.875rem; color: var(--gray-400); line-height: 1.6; }
+
+  /* ── FEATURES ── */
+  .features-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px,1fr));
+    gap: 24px; margin-top: 56px;
+  }
+  .feature-card {
+    background: white; border-radius: 20px;
+    padding: 32px; border: 1px solid rgba(0,0,0,0.07);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .feature-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(21,101,192,0.1); }
+  .feature-icon {
+    width: 56px; height: 56px; border-radius: 16px;
+    background: linear-gradient(135deg, var(--blue-mid), var(--blue-bright));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.6rem; margin-bottom: 20px;
+    box-shadow: 0 4px 16px rgba(21,101,192,0.25);
+  }
+  .feature-card h3 { font-size: 1.05rem; font-weight: 700; color: var(--blue-deep); margin-bottom: 8px; }
+  .feature-card p  { font-size: 0.875rem; color: var(--gray-400); line-height: 1.65; }
+
+  /* ── DATA SOURCES ── */
+  .data-bg {
+    background: linear-gradient(135deg, var(--blue-deep), var(--blue-mid));
+    color: white;
+  }
+  .data-bg .section-title { color: white; }
+  .data-bg .section-sub   { color: rgba(255,255,255,0.7); }
+  .data-bg .section-label { color: var(--blue-pale); }
+  .data-table {
+    width: 100%; border-collapse: collapse; margin-top: 48px;
+    background: rgba(255,255,255,0.08); border-radius: 16px;
+    overflow: hidden;
+  }
+  .data-table th {
+    text-align: left; padding: 16px 24px;
+    font-size: 0.75rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .data-table td {
+    padding: 20px 24px; font-size: 0.9rem;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    color: rgba(255,255,255,0.85);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table td:first-child { font-weight: 600; color: white; }
+  .badge {
+    display: inline-block; padding: 3px 10px;
+    border-radius: 12px; font-size: 0.72rem; font-weight: 600;
+  }
+  .badge-free { background: rgba(46,125,50,0.3); color: #81C784; }
+  .badge-key  { background: rgba(230,81,0,0.3);  color: #FFB74D; }
+
+  /* ── SCORE ── */
+  .score-section { background: var(--gray-100); }
+  .score-visual {
+    display: flex; align-items: center; justify-content: center;
+    gap: 48px; flex-wrap: wrap; margin-top: 56px;
+  }
+  .score-dial {
+    width: 180px; height: 180px; border-radius: 50%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-weight: 900; font-size: 3rem; color: white;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    position: relative;
+  }
+  .score-dial span { font-size: 0.85rem; font-weight: 500; opacity: 0.85; }
+  .score-safe    { background: linear-gradient(135deg,#2E7D32,#4CAF50); }
+  .score-moderate{ background: linear-gradient(135deg,#E65100,#FF9800); }
+  .score-risky   { background: linear-gradient(135deg,#B71C1C,#F44336); }
+  .score-labels { display: flex; flex-direction: column; gap: 16px; }
+  .score-item { display: flex; align-items: center; gap: 12px; }
+  .score-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .score-item p { font-size: 0.9rem; color: var(--gray-700); line-height: 1.4; }
+  .score-item strong { display: block; font-weight: 700; color: var(--blue-deep); }
+
+  /* ── DOWNLOAD ── */
+  .download-section {
+    background: linear-gradient(135deg, var(--blue-deep), var(--blue-mid));
+    text-align: center; padding: 96px 5%;
+  }
+  .download-section h2 { color: white; font-size: clamp(1.8rem,4vw,2.8rem); font-weight: 800; margin-bottom: 16px; }
+  .download-section p  { color: rgba(255,255,255,0.75); font-size: 1.05rem; margin-bottom: 40px; font-weight: 300; }
+  .download-cards { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+  .download-card {
+    background: rgba(255,255,255,0.12); border: 1.5px solid rgba(255,255,255,0.2);
+    border-radius: 20px; padding: 32px 40px;
+    color: white; text-decoration: none;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    transition: background 0.2s, transform 0.2s;
+    min-width: 200px;
+  }
+  .download-card:hover { background: rgba(255,255,255,0.2); transform: translateY(-3px); }
+  .download-card .dl-icon { font-size: 2.4rem; }
+  .download-card h3 { font-weight: 700; font-size: 1rem; }
+  .download-card p  { font-size: 0.8rem; opacity: 0.7; text-align: center; }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--blue-deep); color: rgba(255,255,255,0.6);
+    text-align: center; padding: 40px 5%;
+    font-size: 0.85rem; line-height: 1.8;
+  }
+  footer a { color: var(--blue-pale); text-decoration: none; }
+  footer strong { color: white; }
+
+  /* ── RESPONSIVE ── */
+  @media(max-width:768px){
+    .nav-links { display:none; }
+    .steps { grid-template-columns:1fr; }
+    .step { border-right:none; border-bottom:1px solid rgba(0,0,0,0.06); }
+    .step:last-child { border-bottom:none; }
+    .score-visual { flex-direction:column; }
+    .data-table th:nth-child(3), .data-table td:nth-child(3) { display:none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-brand" href="#">
+    <img src="https://raw.githubusercontent.com/gilangpamungkas/Safewalk/main/assets/icon/app_icon.png" style="width:28px;height:28px;border-radius:6px;object-fit:cover;" alt=""> SafeWalk
+  </a>
+  <div class="nav-links">
+    <a href="#problem">Problem</a>
+    <a href="#how">How it works</a>
+    <a href="#features">Features</a>
+    <a href="#data">Data</a>
+    <a href="#download">Download</a>
+  </div>
+  <a class="nav-cta" href="#download">Download APK</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">🎓 UCL CASA0015 · Connected Environments</div>
+  <div class="hero-icon"><img src="https://raw.githubusercontent.com/gilangpamungkas/Safewalk/main/assets/icon/app_icon.png" alt="SafeWalk icon"></div>
+  <h1>Walk <span>Smarter.</span><br>Stay Safer.</h1>
+  <p>SafeWalk scores every walking route in London for real safety — combining live crime data, road collision records, and pedestrian infrastructure into a single, actionable score.</p>
+  <div class="hero-ctas">
+    <a class="btn-primary" href="#download">⬇️ Download APK</a>
+    <a class="btn-secondary" href="https://github.com/gilangpamungkas/Safewalk" target="_blank">📂 View on GitHub</a>
+  </div>
+  <div class="hero-scroll">↓ scroll</div>
+</section>
+
+<!-- PROBLEM -->
+<section class="section" id="problem">
+  <div class="section-label">The Problem</div>
+  <h2 class="section-title">Navigation apps ignore safety.<br>SafeWalk doesn't.</h2>
+  <p class="section-sub">Existing apps like Google Maps route by speed — treating a dark alley the same as a busy high street. For millions walking London's streets alone at night, this is a real gap.</p>
+  <div class="problem-grid">
+    <div class="problem-card">
+      <div class="stat">40%</div>
+      <h3>Crimes go unreported</h3>
+      <p>UK Crime Survey estimates fewer than half of street crimes are reported to police — yet even reported data reveals concentrated risk corridors.</p>
+    </div>
+    <div class="problem-card">
+      <div class="stat">1 in 3</div>
+      <h3>Women feel unsafe walking at night</h3>
+      <p>ONS data shows women significantly limit their walking behaviour after dark due to safety concerns — affecting mobility, health and independence.</p>
+    </div>
+    <div class="problem-card">
+      <div class="stat">3 APIs</div>
+      <h3>Public data goes unused</h3>
+      <p>Crime, collision and infrastructure data is all publicly available. SafeWalk fuses it into a real-time score — something no consumer app currently does.</p>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section how-bg" id="how">
+  <div class="section-label">How it works</div>
+  <h2 class="section-title">From destination to<br>safer route in seconds.</h2>
+  <p class="section-sub">SafeWalk fetches, scores and visualises route safety automatically — no manual input beyond your destination.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h3>Set your destination</h3>
+      <p>Search any address or tap a saved place. SafeWalk detects your current location automatically.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h3>Compare routes</h3>
+      <p>Up to 3 route alternatives are fetched and scored in parallel. Each appears colour-coded on the map.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h3>Pick the safest</h3>
+      <p>See crime count, collision history, and infrastructure quality for each route before you commit.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <h3>Walk with confidence</h3>
+      <p>Arrival check-in countdown runs in the background. Your emergency contact is alerted if you don't check in.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <h3>Tap "I'm Safe"</h3>
+      <p>One tap confirms your arrival. The countdown cancels and your walk is complete.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="section-label">Features</div>
+  <h2 class="section-title">Everything you need<br>for safer walking.</h2>
+  <p class="section-sub">Built for real safety scenarios — not just navigation.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🗺️</div>
+      <h3>Colour-coded route safety</h3>
+      <p>Each segment of your route is individually scored and coloured — green for safe, red for avoid. See exactly where the risk lies.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🕐</div>
+      <h3>Time-of-day risk adjustment</h3>
+      <p>A route safe at noon scores differently at midnight. Crime patterns are factored by hour — up to 2.5× multiplier for late night walks.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⏱️</div>
+      <h3>Arrival check-in</h3>
+      <p>A countdown starts when your walk begins. If you don't tap "I'm Safe" in time, your emergency contact gets your GPS location via SMS automatically.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🆘</div>
+      <h3>SOS button</h3>
+      <p>Always visible during your walk. Tap to call 999. Long press to SMS your emergency contact with your live location link.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">👥</div>
+      <h3>Community reports</h3>
+      <p>Report and see real-time hazards from other walkers — poor lighting, obstructions, antisocial behaviour and more. Stored in Firebase.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏠</div>
+      <h3>Saved places</h3>
+      <p>Save up to 5 frequent destinations with custom emoji icons. One tap to set as destination — no typing needed.</p>
+    </div>
+  </div>
+</section>
+
+<!-- DATA SOURCES -->
+<section class="section data-bg" id="data">
+  <div class="section-label">Data Sources</div>
+  <h2 class="section-title">Three independent<br>data layers. One score.</h2>
+  <p class="section-sub">SafeWalk fuses open public datasets in real time — no proprietary data, no black box.</p>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th>What it provides</th>
+        <th>Weight in score</th>
+        <th>Access</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>UK Police API</td>
+        <td>Street crime by category within 200m of each route point</td>
+        <td>~50% (crime density)</td>
+        <td><span class="badge badge-free">Free, no key</span></td>
+      </tr>
+      <tr>
+        <td>DfT STATS19</td>
+        <td>Pedestrian-involved road collisions — fatal weighted 3×</td>
+        <td>~30% (collision density)</td>
+        <td><span class="badge badge-free">Free, open data</span></td>
+      </tr>
+      <tr>
+        <td>OpenStreetMap / Overpass</td>
+        <td>Lit paths, pavements, crossings, surface quality per segment</td>
+        <td>~20% (infrastructure)</td>
+        <td><span class="badge badge-free">Free, no key</span></td>
+      </tr>
+      <tr>
+        <td>Google Directions API</td>
+        <td>Walking route alternatives with waypoints</td>
+        <td>Routing only</td>
+        <td><span class="badge badge-key">API key required</span></td>
+      </tr>
+      <tr>
+        <td>Firebase Firestore</td>
+        <td>Community-submitted hazard reports</td>
+        <td>Overlay layer</td>
+        <td><span class="badge badge-key">Firebase project</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- SCORE EXPLAINER -->
+<section class="section score-section">
+  <div class="section-label">Safety Score</div>
+  <h2 class="section-title">What does the<br>score mean?</h2>
+  <p class="section-sub">A single number 0–100, calculated fresh for every route. Higher is safer.</p>
+  <div class="score-visual">
+    <div style="display:flex;gap:32px;flex-wrap:wrap;justify-content:center;">
+      <div class="score-dial score-safe">78<span>Safe</span></div>
+      <div class="score-dial score-moderate">52<span>Moderate</span></div>
+      <div class="score-dial score-risky">31<span>Risky</span></div>
+    </div>
+    <div class="score-labels">
+      <div class="score-item">
+        <div class="score-dot" style="background:#4CAF50"></div>
+        <p><strong>70–100 · Safe</strong>Low crime density, good infrastructure, few collisions</p>
+      </div>
+      <div class="score-item">
+        <div class="score-dot" style="background:#FF9800"></div>
+        <p><strong>40–69 · Moderate</strong>Some risk factors present — consider alternatives</p>
+      </div>
+      <div class="score-item">
+        <div class="score-dot" style="background:#F44336"></div>
+        <p><strong>0–39 · Risky</strong>High crime or collision history — avoid if possible</p>
+      </div>
+      <div class="score-item">
+        <div class="score-dot" style="background:#1565C0"></div>
+        <p><strong>Time multiplier</strong>Score adjusts up to 2.5× for late night — same route, higher risk after dark</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOAD -->
+<section class="download-section" id="download">
+  <h2>Download SafeWalk</h2>
+  <p>Available for Android. Built with Flutter — cross-platform ready.</p>
+  <div class="download-cards">
+    <a class="download-card" href="https://github.com/gilangpamungkas/Safewalk/releases/latest" target="_blank">
+      <div class="dl-icon">⬇️</div>
+      <h3>Download APK</h3>
+      <p>Android 7.0+<br>Direct install</p>
+    </a>
+    <a class="download-card" href="https://github.com/gilangpamungkas/Safewalk" target="_blank">
+      <div class="dl-icon">📂</div>
+      <h3>Source Code</h3>
+      <p>GitHub repository<br>Full commit history</p>
+    </a>
+    <a class="download-card" href="https://github.com/gilangpamungkas/Safewalk#readme" target="_blank">
+      <div class="dl-icon">📖</div>
+      <h3>Documentation</h3>
+      <p>Setup guide<br>API reference</p>
+    </a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p><strong>SafeWalk</strong> — Built by <strong>Gilang Pamungkas</strong></p>
+  <p>MSc Connected Environments · UCL Bartlett Centre for Advanced Spatial Analysis (CASA)</p>
+  <p>CASA0015: Mobile Systems and Interactions · 2025/26</p>
+  <p style="margin-top:16px">
+    <a href="https://github.com/gilangpamungkas/Safewalk">GitHub</a> ·
+    <a href="https://github.com/gilangpamungkas/Safewalk#readme">Documentation</a> ·
+    Data: <a href="https://data.police.uk">UK Police</a> ·
+    <a href="https://www.openstreetmap.org">OpenStreetMap</a> ·
+    <a href="https://data.dft.gov.uk">DfT</a>
+  </p>
+</footer>
+
+</body>
+</html>
