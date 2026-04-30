@@ -12,3 +12,5 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+echo "android/key.properties" >> ~/safewalk_app/.gitignore
+echo "*.jks" >> ~/safewalk_app/.gitignore

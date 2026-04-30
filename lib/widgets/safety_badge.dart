@@ -31,6 +31,10 @@ class SafetyBadge extends StatelessWidget {
 
     if (result == null) return const SizedBox.shrink();
 
+    final osm = result!.osmResult;
+    final frontageLabel = osm.frontageLabel;
+    final frontageColor = _frontageColor(osm.activeFrontageCount);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -42,7 +46,7 @@ class SafetyBadge extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Label + score pill row
+          // ── Label + score pill ─────────────────────────────
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -77,7 +81,7 @@ class SafetyBadge extends StatelessWidget {
 
           const SizedBox(height: 8),
 
-          // Progress bar — higher score = safer = more fill
+          // ── Progress bar ───────────────────────────────────
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
@@ -92,7 +96,7 @@ class SafetyBadge extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          // Crime summary row — period shown in source note below
+          // ── Crime summary ──────────────────────────────────
           Row(
             children: [
               const Icon(Icons.local_police,
@@ -110,7 +114,7 @@ class SafetyBadge extends StatelessWidget {
 
           const SizedBox(height: 2),
 
-          // Collision summary row
+          // ── Collision summary ──────────────────────────────
           Row(
             children: [
               const Icon(Icons.car_crash,
@@ -128,7 +132,7 @@ class SafetyBadge extends StatelessWidget {
 
           const SizedBox(height: 2),
 
-          // OSM infrastructure summary row
+          // ── Infrastructure summary ─────────────────────────
           Row(
             children: [
               const Icon(Icons.streetview,
@@ -146,9 +150,21 @@ class SafetyBadge extends StatelessWidget {
 
           const SizedBox(height: 8),
           const Divider(height: 1, color: Colors.black12),
+          const SizedBox(height: 8),
+
+          // ── Street activity detail chip ────────────────────
+          _DetailChip(
+            icon: Icons.storefront,
+            label: frontageLabel,
+            sublabel: _frontageSubLabel(osm.activeFrontageCount),
+            color: frontageColor,
+          ),
+
+          const SizedBox(height: 8),
+          const Divider(height: 1, color: Colors.black12),
           const SizedBox(height: 6),
 
-          // Data source note — includes period labels for all three sources
+          // ── Data source note ───────────────────────────────
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -158,8 +174,10 @@ class SafetyBadge extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Crime: Met Police (${result!.crimePeriodLabel}) · '
-                  'Collisions: Dept for Transport (${result!.collisionPeriodLabel}) · '
-                  'Infrastructure: OpenStreetMap (${result!.osmPeriodLabel})',
+                  'Collisions: Dept for Transport '
+                  '(${result!.collisionPeriodLabel}) · '
+                  'Infrastructure: OpenStreetMap '
+                  '(${result!.osmPeriodLabel})',
                   style: const TextStyle(
                     fontSize: 10,
                     color: Colors.black38,
@@ -168,6 +186,87 @@ class SafetyBadge extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Plain-English explanation of street activity level.
+  String _frontageSubLabel(int count) {
+    if (count == 0) {
+      return 'No shops or cafes near this route — quieter street';
+    }
+    if (count >= 10) {
+      return '$count businesses nearby — well-watched, active street';
+    }
+    if (count >= 5) {
+      return '$count businesses nearby — some street activity';
+    }
+    if (count == 1) {
+      return '1 business near route — limited street activity';
+    }
+    return '$count businesses near route — limited street activity';
+  }
+
+  Color _frontageColor(int count) {
+    if (count >= 10) return Colors.green;
+    if (count >= 5) return Colors.amber;
+    if (count >= 1) return Colors.orange;
+    return Colors.grey;
+  }
+}
+
+/// Small detail chip showing an icon, label and sublabel.
+class _DetailChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String sublabel;
+  final Color color;
+
+  const _DetailChip({
+    required this.icon,
+    required this.label,
+    required this.sublabel,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  sublabel,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.black45,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

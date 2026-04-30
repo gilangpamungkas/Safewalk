@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../pages/home_page.dart';
+import '../pages/splash_page.dart';
 
 class PermissionWrapper extends StatefulWidget {
   const PermissionWrapper({super.key});
@@ -43,6 +43,7 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
                 const Text(
                   'Location permission is required to use SafeWalk.',
                   textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
@@ -65,6 +66,9 @@ class _PermissionWrapperState extends State<PermissionWrapper> {
       );
     }
 
-    return const SafeWalkHomePage();
+    // Routes to SplashPage which then decides:
+    // first launch → OnboardingPage → HomePage
+    // returning user → HomePage directly
+    return const SplashPage();
   }
 }

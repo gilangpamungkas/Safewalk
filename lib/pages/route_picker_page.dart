@@ -33,16 +33,14 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
   Set<Polyline> _polylines = {};
   Set<Marker> _markers = {};
 
-  // Route colours
-  static const _selectedColor = Color(0xFF1565C0);  // deep blue
-  static const _unselectedColor = Color(0xFF9E9E9E); // grey
+  static const _selectedColor = Color(0xFF1565C0);
+  static const _unselectedColor = Color(0xFF9E9E9E);
 
   @override
   void initState() {
     super.initState();
     _initMarkersAndPolylines();
 
-    // Auto-select safest route
     int safestIndex = 0;
     int highestScore = -1;
     for (int i = 0; i < widget.scores.length; i++) {
@@ -87,31 +85,28 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
 
   void _updatePolylines() {
     final polylines = <Polyline>{};
-
     for (int i = 0; i < widget.alternatives.length; i++) {
       final alt = widget.alternatives[i];
       final isSelected = i == _selectedIndex;
-
       polylines.add(Polyline(
         polylineId: PolylineId('route_$i'),
         points: alt.points,
         width: isSelected ? 6 : 4,
         color: isSelected ? _selectedColor : _unselectedColor,
         zIndex: isSelected ? 2 : 1,
-        patterns: isSelected ? [] : [PatternItem.dash(20), PatternItem.gap(10)],
+        patterns: isSelected
+            ? []
+            : [PatternItem.dash(20), PatternItem.gap(10)],
         consumeTapEvents: true,
         onTap: () => _selectRoute(i),
       ));
     }
-
     setState(() => _polylines = polylines);
   }
 
   void _selectRoute(int index) {
     setState(() => _selectedIndex = index);
     _updatePolylines();
-
-    // Fit camera to selected route
     final bounds = RouteService.boundsFromPoints(
       widget.alternatives[index].points,
     );
@@ -121,7 +116,6 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
   }
 
   void _fitAllRoutes() {
-    // Build bounds from all routes combined
     final allPoints = widget.alternatives
         .expand((alt) => alt.points)
         .toList();
@@ -146,10 +140,104 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
     return widget.scores[index]?.safetyScore == maxScore;
   }
 
+  bool _hasLowestCrime(int index) {
+    if (widget.scores.any((s) => s == null)) return false;
+    final minCrime = widget.scores
+        .map((s) => s!.crimeDensity)
+        .reduce((a, b) => a < b ? a : b);
+    return widget.scores[index]?.crimeDensity == minCrime;
+  }
+
+  bool _hasFewestCollisions(int index) {
+    if (widget.scores.any((s) => s == null)) return false;
+    final minCollision = widget.scores
+        .map((s) => s!.collisionDensity)
+        .reduce((a, b) => a < b ? a : b);
+    return widget.scores[index]?.collisionDensity == minCollision;
+  }
+
+  bool _hasBestInfrastructure(int index) {
+    if (widget.scores.any((s) => s == null)) return false;
+    final maxInfra = widget.scores
+        .map((s) => s!.osmResult.infrastructureScore)
+        .reduce((a, b) => a > b ? a : b);
+    return widget.scores[index]?.osmResult.infrastructureScore ==
+        maxInfra;
+  }
+
+  bool _isShortest(int index) {
+    final minDist = widget.alternatives
+        .map((a) => a.distanceKm)
+        .reduce((a, b) => a < b ? a : b);
+    return widget.alternatives[index].distanceKm == minDist;
+  }
+
+  bool _isFastest(int index) {
+    final minDur = widget.alternatives
+        .map((a) => a.durationMinutes)
+        .reduce((a, b) => a < b ? a : b);
+    return widget.alternatives[index].durationMinutes == minDur;
+  }
+
+  /// Returns a list of insight chips for a given route.
+  /// Only shows insights that are unique to this route
+  /// (best among all alternatives).
+  List<_InsightChip> _insightsFor(int index) {
+    final chips = <_InsightChip>[];
+
+    if (widget.alternatives.length <= 1) return chips;
+
+    if (_isSafest(index)) {
+      chips.add(const _InsightChip(
+        icon: Icons.shield,
+        label: 'Safest overall',
+        color: Colors.green,
+      ));
+    }
+    if (_hasLowestCrime(index)) {
+      chips.add(const _InsightChip(
+        icon: Icons.local_police,
+        label: 'Lowest crime',
+        color: Colors.blue,
+      ));
+    }
+    if (_hasFewestCollisions(index)) {
+      chips.add(const _InsightChip(
+        icon: Icons.car_crash,
+        label: 'Fewest collisions',
+        color: Colors.indigo,
+      ));
+    }
+    if (_hasBestInfrastructure(index)) {
+      chips.add(const _InsightChip(
+        icon: Icons.lightbulb,
+        label: 'Best lit & paved',
+        color: Colors.amber,
+      ));
+    }
+    if (_isFastest(index) && !_isSafest(index)) {
+      chips.add(const _InsightChip(
+        icon: Icons.speed,
+        label: 'Fastest',
+        color: Colors.orange,
+      ));
+    }
+    if (_isShortest(index) && !_isFastest(index)) {
+      chips.add(const _InsightChip(
+        icon: Icons.straighten,
+        label: 'Shortest',
+        color: Colors.teal,
+      ));
+    }
+
+    return chips;
+  }
+
   @override
   Widget build(BuildContext context) {
     final selected = widget.alternatives[_selectedIndex];
     final score = widget.scores[_selectedIndex];
+    final insights = _insightsFor(_selectedIndex);
 
     return Scaffold(
       appBar: AppBar(
@@ -182,16 +270,19 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
             },
           ),
 
-          // ── Route selector tabs — top of map ────────────
+          // ── Route selector tabs — top ────────────────────
           Positioned(
             top: 12,
             left: 12,
             right: 12,
             child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.95),
-                borderRadius: BorderRadius.circular(12),
+  padding: EdgeInsets.fromLTRB(
+    20, 16, 20,
+    MediaQuery.of(context).padding.bottom + 16,
+  ),
+  decoration: const BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 boxShadow: const [
                   BoxShadow(color: Colors.black26, blurRadius: 6),
                 ],
@@ -209,7 +300,9 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           margin: EdgeInsets.only(
-                            right: i < widget.alternatives.length - 1 ? 6 : 0,
+                            right: i < widget.alternatives.length - 1
+                                ? 6
+                                : 0,
                           ),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
@@ -315,7 +408,7 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
             ),
           ),
 
-          // ── Bottom card — selected route details ─────────
+          // ── Bottom card ──────────────────────────────────
           Positioned(
             bottom: 0,
             left: 0,
@@ -334,8 +427,9 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Route summary
+                  // Route summary row
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Column(
@@ -391,7 +485,8 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
                                 Text(
                                   '${selected.distanceKm.toStringAsFixed(1)} km',
                                   style: const TextStyle(
-                                      fontSize: 13, color: Colors.black54),
+                                      fontSize: 13,
+                                      color: Colors.black54),
                                 ),
                                 const SizedBox(width: 16),
                                 const Icon(Icons.schedule,
@@ -400,7 +495,8 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
                                 Text(
                                   '~${selected.durationMinutes} min',
                                   style: const TextStyle(
-                                      fontSize: 13, color: Colors.black54),
+                                      fontSize: 13,
+                                      color: Colors.black54),
                                 ),
                               ],
                             ),
@@ -432,8 +528,8 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              score.safetyLabel
-                                  .replaceAll(RegExp(r'[🟢🟡🟠🔴]\s*'), ''),
+                              score.safetyLabel.replaceAll(
+                                RegExp(r'[🟢🟡🟠🔴]\s*'), ''),
                               style: TextStyle(
                                 fontSize: 10,
                                 color: score.safetyColor,
@@ -447,9 +543,96 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
                     ],
                   ),
 
-                  const SizedBox(height: 16),
+                  // ── Insight chips ──────────────────────────
+                  if (insights.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Why this route stands out',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black45,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: insights.map((chip) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: chip.color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: chip.color.withOpacity(0.4),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(chip.icon,
+                                  size: 12, color: chip.color),
+                              const SizedBox(width: 4),
+                              Text(
+                                chip.label,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: chip.color,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
 
-                  // Walk this route button
+                  // ── Data breakdown ─────────────────────────
+                  if (score != null) ...[
+                    const SizedBox(height: 12),
+                    const Divider(height: 1, color: Colors.black12),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _dataPoint(
+                          icon: Icons.local_police,
+                          label: 'Crime',
+                          value: '${score.crimeResult.totalCrimes}',
+                          color: Colors.red,
+                        ),
+                        _dataPoint(
+                          icon: Icons.car_crash,
+                          label: 'Collisions',
+                          value:
+                              '${score.collisionResult.totalCollisions}',
+                          color: Colors.deepPurple,
+                        ),
+                        _dataPoint(
+  icon: Icons.lightbulb,
+  label: 'Lit',
+  value: '${score.osmResult.litDistancePct.round()}%',
+  color: Colors.amber,
+),
+                        _dataPoint(
+                          icon: Icons.streetview,
+                          label: 'Pavement',
+                          value: score.osmResult.sidewalkSegments > 0
+                              ? 'Yes'
+                              : 'Limited',
+                          color: Colors.teal,
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 14),
+
+                  // ── Walk button ────────────────────────────
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -479,4 +662,48 @@ class _RoutePickerPageState extends State<RoutePickerPage> {
       ),
     );
   }
+
+  Widget _dataPoint({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.black45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Data class for an insight chip.
+class _InsightChip {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _InsightChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
 }
