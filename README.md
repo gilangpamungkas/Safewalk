@@ -1,6 +1,7 @@
 <p align="center">
   <img src="assets/icon/app_icon.png" width="120" alt="SafeWalk icon">
 </p>
+
 # SafeWalk 🛡️
 
 **A pedestrian safety companion for London, built with Flutter.**
@@ -13,7 +14,6 @@ SafeWalk helps people walk more confidently by scoring route safety in real time
 
 ## 📱 Screenshots
 
-<!-- Add screenshots here: splash, home, route map, safety score, onboarding -->
 | Splash | Onboarding | Home | Route Map | Safety Score |
 |--------|-----------|------|-----------|--------------|
 | ![Splash](docs/screenshots/splash.png) | ![Onboarding](docs/screenshots/onboarding.png) | ![Home](docs/screenshots/home.png) | ![Map](docs/screenshots/map.png) | ![Score](docs/screenshots/score.png) |
@@ -22,7 +22,9 @@ SafeWalk helps people walk more confidently by scoring route safety in real time
 
 ## 🎥 Demo
 
-[Watch the demo video](docs/demo.mp4) — 3 minute walkthrough of the full user journey.
+[![SafeWalk Demo Video](docs/screenshots/splash.png)](https://youtube.com/shorts/s6ArEvOEHMk)
+
+> Click the image above to watch the full demo on YouTube.
 
 ---
 
@@ -83,8 +85,9 @@ The score is further **modulated by time of day** — a route that's safe at noo
 - Long press → sends SMS to saved emergency contact with live location link
 - Emergency contact configured in settings with contact picker
 
-### Community Reporting
+### Community Reporting (Crowdsourcing)
 - 7 hazard categories: poor lighting, obstruction, antisocial behaviour, road hazard, suspicious activity, unsafe path, other
+- Reports visible to all users in real time — Volunteered Geographic Information (VGI)
 - Optional description field
 - Reports stored in Firebase Firestore, displayed as cyan markers on map
 - Reports persist across sessions and users

@@ -230,9 +230,10 @@ class OsmService {
   // overpass-api.de returns 406 on the main endpoint — use load-balanced
   // subdomains instead. kumi.systems as fallback, then z subdomain.
   static const _overpassUrls = [
+    'https://overpass.kumi.systems/api/interpreter',
     'https://lz4.overpass-api.de/api/interpreter',
     'https://z.overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
+    
   ];
 
   static const double _maxRouteDistanceMetres = 30;
