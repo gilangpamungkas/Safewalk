@@ -177,8 +177,6 @@ class OsmResult {
   final int activeFrontageCount;
 
   /// Distance-weighted lit percentage (0–100).
-  /// Weighted by physical segment length so a long unlit road
-  /// correctly outweighs a short lit alley.
   final double litDistancePct;
 
   const OsmResult({
@@ -205,7 +203,6 @@ class OsmResult {
     litDistancePct: 0,
   );
 
-  /// Summary uses distance-weighted lit% for accuracy.
   String get summary {
     if (totalSegments == 0) return 'No infrastructure data';
     final litPct = litDistancePct.round();
@@ -213,8 +210,6 @@ class OsmResult {
         '${sidewalkSegments > 0 ? "pavement available" : "limited pavement"}';
   }
 
-  /// Lighting label — always uses distance-weighted lit%.
-  /// More reliable than lamp node count which is incomplete in OSM.
   String lampingLabel(double routeKm) {
     if (litDistancePct >= 80) return 'Well lit';
     if (litDistancePct >= 50) return 'Adequately lit';
@@ -231,10 +226,13 @@ class OsmResult {
 }
 
 class OsmService {
+  // ── Working Overpass mirrors ────────────────────────────────────────────
+  // overpass-api.de returns 406 on the main endpoint — use load-balanced
+  // subdomains instead. kumi.systems as fallback, then z subdomain.
   static const _overpassUrls = [
-    'https://overpass-api.de/api/interpreter',
+    'https://lz4.overpass-api.de/api/interpreter',
+    'https://z.overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   ];
 
   static const double _maxRouteDistanceMetres = 30;
@@ -245,8 +243,6 @@ class OsmService {
     'bank', 'post_office', 'library',
   };
 
-  /// In-memory cache — keyed by rounded bounding box.
-  /// OSM data changes weekly at most, so caching per session is safe.
   static final Map<String, OsmResult> _cache = {};
 
   static String _cacheKey(
@@ -262,23 +258,23 @@ class OsmService {
   }
 
   /// Queries Overpass with retry across mirror servers.
-  /// Returns the first non-empty response or null if all fail.
-  static Future<Map<String, dynamic>?> _queryOverpass(
-      String query) async {
+  static Future<Map<String, dynamic>?> _queryOverpass(String query) async {
+    final encodedQuery = Uri.encodeComponent(query);
     for (int i = 0; i < _overpassUrls.length; i++) {
-      final url = _overpassUrls[i];
+      final baseUrl = _overpassUrls[i];
+      final fullUrl = '$baseUrl?data=$encodedQuery';
       try {
-        debugPrint('OsmService: trying $url (attempt ${i + 1})');
+        debugPrint('OsmService: trying $baseUrl (attempt ${i + 1})');
 
         final response = await http
-            .post(
-              Uri.parse(url),
-              body: {'data': query},
-            )
-            .timeout(const Duration(seconds: 25));
+            .get(Uri.parse(fullUrl))
+            .timeout(const Duration(seconds: 30));
 
         if (response.statusCode != 200) {
-          debugPrint('OsmService: HTTP ${response.statusCode} from $url');
+          debugPrint('OsmService: HTTP ${response.statusCode} from $baseUrl');
+          if (response.statusCode == 429) {
+            await Future.delayed(const Duration(seconds: 5));
+          }
           continue;
         }
 
@@ -286,17 +282,17 @@ class OsmService {
         final elements = json['elements'] as List? ?? [];
 
         if (elements.isNotEmpty) {
-          debugPrint('OsmService: ${elements.length} elements from $url');
+          debugPrint('OsmService: ${elements.length} elements from $baseUrl');
           return json;
         }
 
-        debugPrint('OsmService: empty response from $url');
+        debugPrint('OsmService: empty response from $baseUrl');
       } catch (e) {
-        debugPrint('OsmService: $url failed — $e');
+        debugPrint('OsmService: $baseUrl failed — $e');
       }
 
       if (i < _overpassUrls.length - 1) {
-        await Future.delayed(const Duration(seconds: 2));
+        await Future.delayed(const Duration(seconds: 3));
       }
     }
 
@@ -335,7 +331,7 @@ class OsmService {
     }
 
     final query = '''
-[out:json][timeout:25];
+[out:json][timeout:30];
 (
   way["highway"]
     ["highway"!~"motorway|motorway_link|trunk_link"]
@@ -449,7 +445,7 @@ out tags geom;
       double avgScore =
           weightSum > 0 ? weightedScoreSum / weightSum : 50.0;
 
-      // ── Lighting bonus — distance-weighted lit% only ───────
+      // ── Lighting bonus ─────────────────────────────────────
       if (litDistancePct >= 80) {
         avgScore += 5;
       } else if (litDistancePct >= 50) {
@@ -507,7 +503,6 @@ out tags geom;
         litDistancePct: litDistancePct,
       );
 
-      // ── Cache result ───────────────────────────────────────
       _cache[cacheKey] = result;
       debugPrint('OsmService: cached result for $cacheKey');
 

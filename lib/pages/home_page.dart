@@ -15,6 +15,7 @@ import '../services/combined_safety_score.dart';
 import '../services/saved_destinations_service.dart';
 import 'route_page.dart';
 import 'route_picker_page.dart';
+import 'package:collection/collection.dart';
 
 class SafeWalkHomePage extends StatefulWidget {
   const SafeWalkHomePage({super.key});
@@ -449,18 +450,20 @@ class _SafeWalkHomePageState extends State<SafeWalkHomePage> {
         return;
       }
 
-      final scoreFutures = alternatives.map((alt) async {
-        try {
-          final sampled = RouteService.sampleRoutePoints(alt.points);
-          final results = await Future.wait([
-            PoliceService.getCrimesAlongRoute(
-              sampled,
-              fullRoute: alt.points,
-              routeDistanceKm: alt.distanceKm,
-            ),
-            RoadSafetyService.getCollisionsAlongRoute(alt.points),
-            OsmService.getInfrastructureScore(alt.points),
-          ]);
+      final scoreFutures = alternatives.mapIndexed((index, alt) async {
+  try {
+    // Stagger OSM calls — 800ms apart to avoid Overpass rate limiting
+    await Future.delayed(Duration(milliseconds: index * 800));
+    final sampled = RouteService.sampleRoutePoints(alt.points);
+    final results = await Future.wait([
+      PoliceService.getCrimesAlongRoute(
+        sampled,
+        fullRoute: alt.points,
+        routeDistanceKm: alt.distanceKm,
+      ),
+      RoadSafetyService.getCollisionsAlongRoute(alt.points),
+      OsmService.getInfrastructureScore(alt.points),
+    ]);
           return CombinedSafetyScore(
             crimeResult: results[0] as CrimeResult,
             collisionResult: results[1] as CollisionResult,
