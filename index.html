@@ -33,12 +33,11 @@
     overflow-x: hidden;
   }
 
-  /* ── NAV ── */
+  /* NAV */
   nav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 100;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 0 5%;
-    height: 64px;
+    padding: 0 5%; height: 64px;
     background: rgba(13,43,110,0.92);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -48,12 +47,10 @@
     color: white; font-weight: 800; font-size: 1.2rem; text-decoration: none;
     letter-spacing: -0.02em;
   }
-  .nav-brand .shield { font-size: 1.4rem; }
   .nav-links { display: flex; gap: 32px; }
   .nav-links a {
     color: rgba(255,255,255,0.8); text-decoration: none;
-    font-size: 0.875rem; font-weight: 500;
-    transition: color 0.2s;
+    font-size: 0.875rem; font-weight: 500; transition: color 0.2s;
   }
   .nav-links a:hover { color: white; }
   .nav-cta {
@@ -64,7 +61,7 @@
   }
   .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
 
-  /* ── HERO ── */
+  /* HERO */
   .hero {
     min-height: 100vh;
     background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 50%, var(--blue-light) 100%);
@@ -76,10 +73,14 @@
   }
   .hero::before {
     content: '';
-    position: absolute; inset: 0;
+    position: absolute; inset: 0; z-index: 0;
     background: radial-gradient(ellipse at 70% 40%, rgba(255,255,255,0.08) 0%, transparent 60%),
                 radial-gradient(ellipse at 20% 80%, rgba(255,255,255,0.05) 0%, transparent 50%);
+    pointer-events: none;
   }
+  /* All direct hero children sit above the ::before overlay */
+  .hero > * { position: relative; z-index: 1; }
+
   .hero-badge {
     display: inline-flex; align-items: center; gap: 8px;
     background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
@@ -93,19 +94,15 @@
     background: rgba(255,255,255,0.15);
     border: 2px solid rgba(255,255,255,0.3);
     display: flex; align-items: center; justify-content: center;
-    font-size: 3rem; margin: 0 auto 32px;
+    margin: 0 auto 32px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.2);
     overflow: hidden;
   }
-  .hero-icon img {
-    width: 100%; height: 100%;
-    object-fit: cover; display: block;
-  }
+  .hero-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .hero h1 {
     font-size: clamp(2.8rem, 7vw, 5rem);
     font-weight: 900; color: white;
-    line-height: 1.05; letter-spacing: -0.03em;
-    margin-bottom: 20px;
+    line-height: 1.05; letter-spacing: -0.03em; margin-bottom: 20px;
   }
   .hero h1 span { color: var(--blue-pale); }
   .hero p {
@@ -122,6 +119,7 @@
     font-weight: 700; font-size: 1rem; text-decoration: none;
     transition: transform 0.2s, box-shadow 0.2s;
     box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+    cursor: pointer;
   }
   .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.25); }
   .btn-secondary {
@@ -132,6 +130,7 @@
     font-weight: 600; font-size: 1rem; text-decoration: none;
     backdrop-filter: blur(8px);
     transition: background 0.2s, transform 0.2s;
+    cursor: pointer;
   }
   .btn-secondary:hover { background: rgba(255,255,255,0.25); transform: translateY(-2px); }
   .hero-scroll {
@@ -139,26 +138,30 @@
     color: rgba(255,255,255,0.5); font-size: 0.75rem; font-weight: 500;
     display: flex; flex-direction: column; align-items: center; gap: 6px;
     animation: bounce 2s ease-in-out infinite;
+    pointer-events: none;
   }
-  @keyframes bounce { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(6px)} }
+  @keyframes bounce {
+    0%,100% { transform: translateX(-50%) translateY(0); }
+    50%      { transform: translateX(-50%) translateY(6px); }
+  }
 
-  /* ── PROBLEM ── */
+  /* SECTIONS */
   .section { padding: 96px 5%; }
   .section-label {
     font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em;
-    text-transform: uppercase; color: var(--blue-bright);
-    margin-bottom: 12px;
+    text-transform: uppercase; color: var(--blue-bright); margin-bottom: 12px;
   }
   .section-title {
     font-size: clamp(1.8rem, 4vw, 2.8rem);
     font-weight: 800; color: var(--blue-deep);
-    line-height: 1.15; letter-spacing: -0.02em;
-    margin-bottom: 20px;
+    line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 20px;
   }
   .section-sub {
     font-size: 1.05rem; color: var(--gray-400);
     max-width: 560px; line-height: 1.7; font-weight: 300;
   }
+
+  /* PROBLEM */
   .problem-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
     gap: 24px; margin-top: 56px;
@@ -174,11 +177,14 @@
   .problem-card h3 { font-size: 1rem; font-weight: 700; color: var(--blue-deep); margin-bottom: 8px; }
   .problem-card p  { font-size: 0.9rem; color: var(--gray-400); line-height: 1.6; }
 
-  /* ── HOW IT WORKS ── */
+  /* HOW IT WORKS */
   .how-bg { background: var(--gray-100); }
-  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 0; margin-top: 56px; }
+  .steps {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
+    gap: 0; margin-top: 56px;
+  }
   .step {
-    padding: 32px 28px; position: relative;
+    padding: 32px 28px;
     border-right: 1px solid rgba(0,0,0,0.06);
   }
   .step:last-child { border-right: none; }
@@ -192,7 +198,7 @@
   .step h3 { font-size: 1rem; font-weight: 700; color: var(--blue-deep); margin-bottom: 8px; }
   .step p  { font-size: 0.875rem; color: var(--gray-400); line-height: 1.6; }
 
-  /* ── FEATURES ── */
+  /* FEATURES */
   .features-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(300px,1fr));
     gap: 24px; margin-top: 56px;
@@ -213,7 +219,7 @@
   .feature-card h3 { font-size: 1.05rem; font-weight: 700; color: var(--blue-deep); margin-bottom: 8px; }
   .feature-card p  { font-size: 0.875rem; color: var(--gray-400); line-height: 1.65; }
 
-  /* ── DATA SOURCES ── */
+  /* DATA SOURCES */
   .data-bg {
     background: linear-gradient(135deg, var(--blue-deep), var(--blue-mid));
     color: white;
@@ -247,7 +253,7 @@
   .badge-free { background: rgba(46,125,50,0.3); color: #81C784; }
   .badge-key  { background: rgba(230,81,0,0.3);  color: #FFB74D; }
 
-  /* ── SCORE ── */
+  /* SCORE */
   .score-section { background: var(--gray-100); }
   .score-visual {
     display: flex; align-items: center; justify-content: center;
@@ -259,25 +265,24 @@
     align-items: center; justify-content: center;
     font-weight: 900; font-size: 3rem; color: white;
     box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-    position: relative;
   }
   .score-dial span { font-size: 0.85rem; font-weight: 500; opacity: 0.85; }
-  .score-safe    { background: linear-gradient(135deg,#2E7D32,#4CAF50); }
-  .score-moderate{ background: linear-gradient(135deg,#E65100,#FF9800); }
-  .score-risky   { background: linear-gradient(135deg,#B71C1C,#F44336); }
+  .score-safe     { background: linear-gradient(135deg,#2E7D32,#4CAF50); }
+  .score-moderate { background: linear-gradient(135deg,#E65100,#FF9800); }
+  .score-risky    { background: linear-gradient(135deg,#B71C1C,#F44336); }
   .score-labels { display: flex; flex-direction: column; gap: 16px; }
   .score-item { display: flex; align-items: center; gap: 12px; }
   .score-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   .score-item p { font-size: 0.9rem; color: var(--gray-700); line-height: 1.4; }
   .score-item strong { display: block; font-weight: 700; color: var(--blue-deep); }
 
-  /* ── DOWNLOAD ── */
+  /* DOWNLOAD */
   .download-section {
     background: linear-gradient(135deg, var(--blue-deep), var(--blue-mid));
     text-align: center; padding: 96px 5%;
   }
   .download-section h2 { color: white; font-size: clamp(1.8rem,4vw,2.8rem); font-weight: 800; margin-bottom: 16px; }
-  .download-section p  { color: rgba(255,255,255,0.75); font-size: 1.05rem; margin-bottom: 40px; font-weight: 300; }
+  .download-section > p { color: rgba(255,255,255,0.75); font-size: 1.05rem; margin-bottom: 40px; font-weight: 300; }
   .download-cards { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
   .download-card {
     background: rgba(255,255,255,0.12); border: 1.5px solid rgba(255,255,255,0.2);
@@ -292,7 +297,7 @@
   .download-card h3 { font-weight: 700; font-size: 1rem; }
   .download-card p  { font-size: 0.8rem; opacity: 0.7; text-align: center; }
 
-  /* ── FOOTER ── */
+  /* FOOTER */
   footer {
     background: var(--blue-deep); color: rgba(255,255,255,0.6);
     text-align: center; padding: 40px 5%;
@@ -301,14 +306,14 @@
   footer a { color: var(--blue-pale); text-decoration: none; }
   footer strong { color: white; }
 
-  /* ── RESPONSIVE ── */
+  /* RESPONSIVE */
   @media(max-width:768px){
-    .nav-links { display:none; }
-    .steps { grid-template-columns:1fr; }
-    .step { border-right:none; border-bottom:1px solid rgba(0,0,0,0.06); }
-    .step:last-child { border-bottom:none; }
-    .score-visual { flex-direction:column; }
-    .data-table th:nth-child(3), .data-table td:nth-child(3) { display:none; }
+    .nav-links { display: none; }
+    .steps { grid-template-columns: 1fr; }
+    .step { border-right: none; border-bottom: 1px solid rgba(0,0,0,0.06); }
+    .step:last-child { border-bottom: none; }
+    .score-visual { flex-direction: column; }
+    .data-table th:nth-child(3), .data-table td:nth-child(3) { display: none; }
   }
 </style>
 </head>
@@ -317,7 +322,9 @@
 <!-- NAV -->
 <nav>
   <a class="nav-brand" href="#">
-    <img src="https://raw.githubusercontent.com/gilangpamungkas/Safewalk/main/assets/icon/app_icon.png" style="width:28px;height:28px;border-radius:6px;object-fit:cover;" alt=""> SafeWalk
+    <img src="https://raw.githubusercontent.com/gilangpamungkas/Safewalk/main/assets/icon/app_icon.png"
+         style="width:28px;height:28px;border-radius:6px;object-fit:cover;" alt="SafeWalk icon">
+    SafeWalk
   </a>
   <div class="nav-links">
     <a href="#problem">Problem</a>
@@ -326,13 +333,15 @@
     <a href="#data">Data</a>
     <a href="#download">Download</a>
   </div>
-  <a class="nav-cta" href="https://github.com/gilangpamungkas/Safewalk/releases/download/v1.0.0/app-release.apk">Download APK</a>
+  <a class="nav-cta" href="https://github.com/gilangpamungkas/Safewalk/releases/download/v1.0.0/app-release.apk" target="_blank">Download APK</a>
 </nav>
 
 <!-- HERO -->
 <section class="hero">
   <div class="hero-badge">🎓 UCL CASA0015 · Connected Environments</div>
-  <div class="hero-icon"><img src="https://raw.githubusercontent.com/gilangpamungkas/Safewalk/main/assets/icon/app_icon.png" alt="SafeWalk icon"></div>
+  <div class="hero-icon">
+    <img src="https://raw.githubusercontent.com/gilangpamungkas/Safewalk/main/assets/icon/app_icon.png" alt="SafeWalk icon">
+  </div>
   <h1>Walk <span>Smarter.</span><br>Stay Safer.</h1>
   <p>SafeWalk scores every walking route in London for real safety — combining live crime data, road collision records, and pedestrian infrastructure into a single, actionable score.</p>
   <div class="hero-ctas">
