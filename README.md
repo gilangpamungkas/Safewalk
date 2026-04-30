@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="assets/icon/app_icon.png" width="120" alt="SafeWalk icon">
+</p>
 # SafeWalk 🛡️
 
 **A pedestrian safety companion for London, built with Flutter.**
