@@ -15,7 +15,9 @@ SafeWalk helps people walk more confidently by scoring route safety in real time
 
 ## 🎥 Demo
 
-[![SafeWalk Demo Video](docs/screenshots/splash.png)](https://youtube.com/shorts/s6ArEvOEHMk)
+<a href="https://youtube.com/shorts/s6ArEvOEHMk">
+  <img src="docs/screenshots/splash.png" width="300" alt="SafeWalk Demo Video">
+</a>
 
 > Click the image above to watch the full demo on YouTube.
 
