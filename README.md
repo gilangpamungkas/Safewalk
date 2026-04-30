@@ -12,13 +12,6 @@ SafeWalk helps people walk more confidently by scoring route safety in real time
 
 ---
 
-## 📱 Screenshots
-
-| Splash | Onboarding | Home | Route Map | Safety Score |
-|--------|-----------|------|-----------|--------------|
-| ![Splash](docs/screenshots/splash.png) | ![Onboarding](docs/screenshots/onboarding.png) | ![Home](docs/screenshots/home.png) | ![Map](docs/screenshots/map.png) | ![Score](docs/screenshots/score.png) |
-
----
 
 ## 🎥 Demo
 
